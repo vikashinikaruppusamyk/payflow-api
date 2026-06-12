@@ -37,8 +37,8 @@ public class UserController {
         return userService.findByUpiId(upiId);
     }
 
-    @GetMapping("/balance/{amount}")
-    public List<User> getUsersByBalanceGreaterThanEqual(@PathVariable Double amount) {
-        return userService.findByBalanceGreaterThanEqual(amount);
+    @GetMapping("/balance/{balance}")
+    public List<User> getUsersByBalance(@PathVariable Double balance) {
+        return userService.findByBalanceGreaterThanEqual(balance);
     }
 }
