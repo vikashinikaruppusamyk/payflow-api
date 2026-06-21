@@ -1,6 +1,7 @@
 package com.example.payflow.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "transaction")
@@ -12,6 +13,7 @@ public class Transaction {
     private String receiverUpId;
     private Double amount;
     private String note;
+    private LocalDateTime timestamp;
 
     public Transaction() {
     }
@@ -21,6 +23,7 @@ public class Transaction {
         this.receiverUpId = receiverUpId;
         this.amount = amount;
         this.note = note;
+        this.timestamp = LocalDateTime.now();
     }
 
     public Long getTransactionId() {
@@ -61,5 +64,13 @@ public class Transaction {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
     }
 }
