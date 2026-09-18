@@ -2,6 +2,8 @@ package com.example.payflow.entity;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "app_user")
 public class User {
@@ -10,13 +12,14 @@ public class User {
     private Long userId;
     private String name;
     private String upiId;
-    private Double balance;
+    @Column(precision = 19, scale = 2)
+    private BigDecimal balance;
     private String phoneNumber;
 
     public User() {
     }
 
-    public User(String name, String upiId, Double balance, String phoneNumber) {
+    public User(String name, String upiId, BigDecimal balance, String phoneNumber) {
         this.name = name;
         this.upiId = upiId;
         this.balance = balance;
@@ -47,11 +50,11 @@ public class User {
         this.upiId = upiId;
     }
 
-    public Double getBalance() {
+    public BigDecimal getBalance() {
         return balance;
     }
 
-    public void setBalance(Double balance) {
+    public void setBalance(BigDecimal balance) {
         this.balance = balance;
     }
 

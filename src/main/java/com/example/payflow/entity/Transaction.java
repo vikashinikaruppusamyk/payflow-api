@@ -1,6 +1,7 @@
 package com.example.payflow.entity;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -11,14 +12,15 @@ public class Transaction {
     private Long transactionId;
     private String senderUpiId;
     private String receiverUpiId;
-    private Double amount;
+    @Column(precision = 19, scale = 2)
+    private BigDecimal amount;
     private String note;
     private LocalDateTime timestamp;
 
     public Transaction() {
     }
 
-    public Transaction(String senderUpiId, String receiverUpiId, Double amount, String note) {
+    public Transaction(String senderUpiId, String receiverUpiId, BigDecimal amount, String note) {
         this.senderUpiId = senderUpiId;
         this.receiverUpiId = receiverUpiId;
         this.amount = amount;
@@ -50,11 +52,11 @@ public class Transaction {
         this.receiverUpiId = receiverUpiId;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 

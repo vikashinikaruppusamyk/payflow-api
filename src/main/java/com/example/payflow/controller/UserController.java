@@ -5,6 +5,7 @@ import com.example.payflow.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -38,7 +39,7 @@ public class UserController {
     }
 
     @GetMapping("/balance/{balance}")
-    public List<User> getUsersByBalance(@PathVariable Double balance) {
+    public List<User> getUsersByBalance(@PathVariable BigDecimal balance) {
         return userService.findByBalanceGreaterThanEqual(balance);
     }
 }

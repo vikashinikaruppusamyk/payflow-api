@@ -7,6 +7,8 @@ import com.example.payflow.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+
 @Service
 public class TransactionService {
     private final TransactionRepository transactionRepository;
@@ -20,8 +22,11 @@ public class TransactionService {
 
     public Transaction sendMoney(Transaction transaction) {
         // Validate amount is positive
-        if (transaction.getAmount() == null || transaction.getAmount() <= 0) {
+        if (transaction.getAmount() == null || transaction.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Transfer amount must be greater than zero");
+        }
+        if (transaction.getAmount().stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException("Transfer amount can have at most 2 decimal places");
         }
 
         // Look up sender and receiver
@@ -36,13 +41,13 @@ public class TransactionService {
         }
 
         // Validate sufficient balance
-        if (sender.getBalance() < transaction.getAmount()) {
+        if (sender.getBalance().compareTo(transaction.getAmount()) < 0) {
             throw new IllegalArgumentException("Insufficient balance");
         }
 
         // Deduct from sender, credit to receiver
-        sender.setBalance(sender.getBalance() - transaction.getAmount());
-        receiver.setBalance(receiver.getBalance() + transaction.getAmount());
+        sender.setBalance(sender.getBalance().subtract(transaction.getAmount()));
+        receiver.setBalance(receiver.getBalance().add(transaction.getAmount()));
 
         userRepository.save(sender);
         userRepository.save(receiver);

@@ -5,6 +5,7 @@ import com.example.payflow.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Service
@@ -17,6 +18,9 @@ public class UserService {
     }
 
     public User registerUser(User user) {
+        if (user.getBalance() == null) {
+            user.setBalance(BigDecimal.ZERO);
+        }
         return userRepository.save(user);
     }
 
@@ -32,7 +36,7 @@ public class UserService {
         return userRepository.findByUpiId(upiId);
     }
 
-    public List<User> findByBalanceGreaterThanEqual(Double amount) {
+    public List<User> findByBalanceGreaterThanEqual(BigDecimal amount) {
         return userRepository.findByBalanceGreaterThanEqual(amount);
     }
 }
