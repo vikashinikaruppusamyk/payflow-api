@@ -29,6 +29,9 @@ public class TransactionService {
             throw new IllegalArgumentException("Transfer amount can have at most 2 decimal places");
         }
 
+        transaction.setSenderUpiId(UserService.normalizeUpiId(transaction.getSenderUpiId()));
+        transaction.setReceiverUpiId(UserService.normalizeUpiId(transaction.getReceiverUpiId()));
+
         // Look up sender and receiver
         User sender = userRepository.findByUpiId(transaction.getSenderUpiId());
         User receiver = userRepository.findByUpiId(transaction.getReceiverUpiId());

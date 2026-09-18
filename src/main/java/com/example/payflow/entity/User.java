@@ -11,6 +11,7 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long userId;
     private String name;
+    @Column(unique = true, nullable = false)
     private String upiId;
     @Column(precision = 19, scale = 2)
     private BigDecimal balance;
