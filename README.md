@@ -1,148 +1,224 @@
 # PayFlow API
 
-A Spring Boot REST API that powers a simplified UPI-style digital wallet system. Users can register, view their wallet balance, and record money transfers between each other — entirely through HTTP calls.
+[![CI](https://github.com/vikashinikaruppusamyk/payflow-api/actions/workflows/ci.yml/badge.svg)](https://github.com/vikashinikaruppusamyk/payflow-api/actions/workflows/ci.yml)
 
----
+A Spring Boot REST API for a UPI-style digital wallet. Users register with a UPI ID, send money to each other and view their statements.
 
-## How to Run the App
+The focus is on **keeping money correct**: transfers are atomic, stay correct under concurrent requests, are safe to retry, and leave an audit trail. A test suite proves each of these properties.
 
-### Prerequisites
-- Java 17 or above
-- Maven installed (or use the Maven wrapper `./mvnw`)
-- IntelliJ IDEA or any Java IDE
+## Highlights
 
-### Steps
+| Problem | How PayFlow handles it |
+|---|---|
+| Partial transfers (debit saved, credit lost) | Debit, credit and status update run in **one database transaction** |
+| Two requests overdrawing the same account at once | **Optimistic locking** (`@Version`) with automatic retry; proven by a 100-thread test |
+| Deadlock between opposite transfers (A→B while B→A) | Hibernate flushes updates in primary-key order (`hibernate.order_updates`) |
+| Client retries after a timeout and pays twice | **Idempotency-Key** header; retries replay the stored result |
+| Failed transfers disappearing | Every attempt is stored as `PENDING` → `SUCCESS` / `FAILED` with a reason |
+| Floating-point rounding | Money is `BigDecimal` / `NUMERIC(19,2)` everywhere |
+| Bad input reaching the service | Bean Validation on request DTOs; JPA entities are never exposed |
+| Understanding where transfers fail | Event log per transfer (`INITIATED → … → COMPLETED/FAILED`), exportable as CSV for process mining |
 
-1. Clone the repository:
+## Tech stack
+
+Java 17 · Spring Boot 3.5 (Web, Data JPA, Validation) · PostgreSQL · Flyway · springdoc-openapi (Swagger UI) · JUnit 5, Mockito, MockMvc · JaCoCo · GitHub Actions
+
+## Architecture
+
+```
+controller   REST endpoints, request validation, HTTP status codes
+    │
+service      TransactionService  – orchestrates a transfer: idempotency check, retries, failure recording
+    │        TransferProcessor   – one transfer attempt in one @Transactional unit
+    │        TransactionRecorder – PENDING / FAILED / event writes in their own transactions (REQUIRES_NEW)
+    │        UserService, StatementService, EventLogService
+    │
+repository   Spring Data JPA repositories
+    │
+PostgreSQL   schema owned by Flyway migrations (src/main/resources/db/migration)
+```
+
+### Life of a transfer
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as TransactionService
+    participant R as TransactionRecorder
+    participant P as TransferProcessor
+    participant DB as PostgreSQL
+
+    C->>S: POST /transactions (Idempotency-Key)
+    S->>DB: key already used by this sender?
+    alt key seen before
+        S-->>C: stored result (200, Idempotent-Replayed: true)
+    else new request
+        S->>R: createPending()  [tx 1: PENDING + INITIATED]
+        loop up to max-attempts
+            S->>P: execute()  [tx 2: validate, debit, credit, SUCCESS + events]
+            alt version conflict / lock timeout
+                P-->>S: ConcurrencyFailureException (tx 2 rolled back)
+                S->>R: record RETRIED, back off, try again
+            end
+        end
+        alt business failure or retries exhausted
+            S->>R: markFailed()  [tx 3: FAILED + reason]
+            S-->>C: 404 / 409 / 422 with failureReason and transactionId
+        else success
+            S-->>C: 201 Created
+        end
+    end
+```
+
+## Design decisions
+
+**Atomic transfers.** `TransferProcessor.execute` is `@Transactional`: the debit, the credit, the `SUCCESS` status and the step events commit together or not at all. `TransferAtomicityTest` forces the database to reject the credit after the debit has been issued, then checks that the debit was rolled back.
+
+**Optimistic over pessimistic locking.** `User` has a `@Version` column. If two transfers read the same balance, the second one to commit updates zero rows and fails with an optimistic locking exception instead of silently overwriting the first. `TransactionService` retries the whole attempt with a short random back-off (default 3 attempts), then returns `409`. Most transfers touch different accounts, so conflicts are rare, and optimistic locking holds no row locks while the balance is checked. For a small set of accounts that are updated constantly, `SELECT … FOR UPDATE` would be the better trade-off.
+
+**Why the retry loop lives in a different bean.** `@Transactional` works through a Spring proxy. A method calling another method on the same object bypasses the proxy, so the call runs without a new transaction. Keeping the loop in `TransactionService` and the transactional attempt in `TransferProcessor` gives every retry a fresh transaction.
+
+**Recording failures that would otherwise be rolled back.** If a `FAILED` row were saved inside the transfer transaction, the rollback would erase it. `TransactionRecorder` writes `PENDING` and `FAILED` in separate `REQUIRES_NEW` transactions, so every attempt stays in the audit trail.
+
+**Idempotency.** Clients send an `Idempotency-Key` (e.g. a UUID) per transfer and reuse it when retrying:
+
+- **First request:** `201 Created`.
+- **Retry with the same body:** `200` with the original result and an `Idempotent-Replayed: true` header.
+- **Retry while the first request is still running:** `409`.
+- **Same key with a different body:** `422`.
+
+Keys are unique per sender, enforced by a database constraint. If two identical requests race past the lookup, the constraint lets exactly one insert win and the other replays its result.
+
+**Defence in depth.** The service enforces the rules, and the database enforces them again:
+- `CHECK (balance >= 0)`
+- `CHECK (amount > 0)`
+- unique UPI IDs
+- allowed status values
+
+The schema is versioned with Flyway, and Hibernate runs with `ddl-auto=validate`.
+
+**Event log for process mining.** Each transfer writes one row per step: `INITIATED`, `VALIDATED`, `DEBITED`, `CREDITED`, `COMPLETED`, or `RETRIED` / `FAILED` / `REPLAYED`. This is the case-id / activity / timestamp format that process-mining tools read. `GET /events/export` downloads it as CSV, so you can analyse where transfers fail, how often they retry and how long each step takes.
+
+## Running locally
+
+**Prerequisites:** Java 17+ and PostgreSQL. You don't need to install Maven because the wrapper is included.
+
+1. Create the database:
+   ```bash
+   psql -U postgres -c "CREATE DATABASE payflow;"
    ```
-   git clone https://github.com/vikashinikaruppusamyk/payflow-api.git
+2. Configure the connection. Copy `local.properties.example` to `local.properties` (git ignores it) and set `DB_PASSWORD`. Every key can also be set as an environment variable (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`).
+3. Start the app. Flyway creates the tables on first start.
+   ```bash
+   ./mvnw spring-boot:run
    ```
+   On Windows use `mvnw.cmd spring-boot:run`, or run `PayflowApplication` from IntelliJ.
+4. Open Swagger UI at http://localhost:8080/swagger-ui.html.
 
-2. Navigate to the project directory:
-   ```
-   cd payflow-api
-   ```
+## Tests
 
-3. Run the application using Maven:
-   ```
-   mvn spring-boot:run
-   ```
+```bash
+./mvnw verify
+```
 
-4. The application will start on port 8080. You should see:
-   ```
-   Started PayflowApplication in X seconds
-   ```
+The suite has 61 tests: unit tests, API tests and concurrency tests. It runs against an in-memory H2 database in PostgreSQL mode, so it needs no setup. The coverage report is written to `target/site/jacoco/index.html` (about 93% line coverage, 97% in the service layer).
 
-5. Access the H2 console at:
-   ```
-   http://localhost:8080/h2-console
-   ```
-    - JDBC URL: `jdbc:h2:mem:payflow`
-    - Username: `sa`
-    - Password: (leave empty)
+To run the same suite against a real PostgreSQL database, set:
+- `TEST_DB_URL`, e.g. `jdbc:postgresql://localhost:5432/payflow_test`
+- `TEST_DB_USERNAME`
+- `TEST_DB_PASSWORD`
 
----
+CI runs the suite on both H2 and PostgreSQL for every push.
 
-## API Endpoints
+The concurrency tests check invariants that must hold however the threads interleave:
+- **One sender, 100 simultaneous transfers:** the total amount of money is unchanged, and every successful transfer has exactly one `SUCCESS` row and one `COMPLETED` event.
+- **50 transfers of 10.00 against a balance of 100.00:** at most 10 succeed and the balance never goes negative.
+- **Opposite transfers A→B and B→A at the same time:** no deadlock errors and no money lost.
+
+Removing `@Version` from `User` makes all three fail. In one run, an account with 100.00 accepted all 50 transfers of 10.00.
+
+## API
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /users | Register a new user |
-| GET | /users | Get all registered users |
-| GET | /users/{id} | Get a user by their ID |
-| GET | /users/upi/{upiId} | Get a user by their UPI ID |
-| GET | /users/balance/{amount} | Get users with balance >= amount |
-| POST | /transactions | Record a money transfer |
+|---|---|---|
+| POST | `/users` | Register a user (`201`, `409` if the UPI ID is taken) |
+| GET | `/users?minBalance=500` | List users, optionally with balance ≥ `minBalance` |
+| GET | `/users/{userId}` | User by id |
+| GET | `/users/upi/{upiId}` | User by UPI ID (case-insensitive) |
+| GET | `/users/{upiId}/transactions?page=0&size=20&status=SUCCESS` | Paginated statement, newest first, with DEBIT/CREDIT direction |
+| POST | `/transactions` | Send money (optional `Idempotency-Key` header) |
+| GET | `/transactions/{id}` | Any transfer, including failed ones |
+| GET | `/transactions/{id}/events` | Life-cycle events of one transfer |
+| GET | `/events/export?from=&to=` | Event log as CSV |
 
----
+### Example
 
-## Project Structure
+```bash
+curl -X POST localhost:8080/users -H "Content-Type: application/json" \
+  -d '{"name":"Priya","upiId":"priya@okaxis","initialBalance":1000,"phoneNumber":"9876543210"}'
 
-The project is organized into four packages, each with a specific responsibility:
+curl -X POST localhost:8080/users -H "Content-Type: application/json" \
+  -d '{"name":"Ravi","upiId":"ravi@oksbi"}'
 
-### entity
-Contains the JPA entity classes that map to database tables. Each entity represents a real-world concept:
-- `User.java` — mapped to the `app_user` table. Holds user details like name, UPI ID, balance, and phone number.
-- `Transaction.java` — mapped to the `transaction` table. Records every money transfer with sender UPI ID, receiver UPI ID, amount, and an optional note.
-
-### repository
-Contains interfaces that extend `JpaRepository`. Spring Data JPA automatically provides implementations for standard database operations like save, findAll, findById, and delete — without writing any SQL manually.
-- `UserRepository.java` — includes a derived query `findByUpiId` and a custom JPQL query to find users by balance.
-- `TransactionRepository.java` — inherits standard CRUD operations from JpaRepository.
-
-### service
-Contains the business logic layer. Service classes sit between the controller and the repository. They receive requests from controllers, apply any business rules, and call the appropriate repository methods.
-- `UserService.java` — handles user registration, fetching users by ID, by UPI ID, and by balance.
-- `TransactionService.java` — handles saving a transaction record.
-
-### controller
-Contains REST controllers that expose HTTP endpoints. Each controller receives an HTTP request, calls the appropriate service method, and returns the response as JSON.
-- `UserController.java` — handles all `/users` endpoints.
-- `TransactionController.java` — handles the `/transactions` endpoint.
-
----
-
-## Spring Boot Features in PayFlow
-
-### 1. Embedded Server (Tomcat)
-Spring Boot ships with an embedded Tomcat server. In PayFlow, this means the application starts as a standalone Java process on port 8080 — no separate server installation required. When you run `mvn spring-boot:run`, Tomcat starts automatically inside the application itself.
-
-### 2. Auto-Configuration
-Spring Boot detects the dependencies in the classpath and automatically configures the necessary beans. In PayFlow:
-- It detects `spring-boot-starter-data-jpa` and automatically sets up Hibernate and the JPA EntityManagerFactory.
-- It detects the H2 dependency and automatically configures an in-memory database connection.
-- It enables the H2 console automatically when `spring.h2.console.enabled=true` is set.
-- No XML configuration files or manual bean definitions were needed.
-
-### 3. Production-Ready Defaults (Opinionated Defaults)
-Spring Boot provides sensible defaults so developers can start building immediately. In PayFlow:
-- The default port is 8080 — no need to configure it manually.
-- Spring Data JPA automatically creates the `app_user` and `transaction` tables on startup using the entity class definitions.
-- The `spring.jpa.ddl-auto` strategy defaults to `create-drop` for in-memory databases, meaning tables are created fresh on every startup.
-
----
-
-## Repository Layer — Custom Queries
-
-### findByUpiId — Derived Query Method
-
-```java
-User findByUpiId(String upiId);
+curl -X POST localhost:8080/transactions -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 3f6c1a52-rent-june" \
+  -d '{"senderUpiId":"priya@okaxis","receiverUpiId":"ravi@oksbi","amount":250.50,"note":"rent"}'
 ```
 
-The SQL JPA generates for this method:
-```sql
-SELECT * FROM app_user WHERE upi_id = ?
+```json
+{
+  "transactionId": 1,
+  "senderUpiId": "priya@okaxis",
+  "receiverUpiId": "ravi@oksbi",
+  "amount": 250.50,
+  "note": "rent",
+  "status": "SUCCESS",
+  "failureReason": null,
+  "createdAt": "2026-09-18T12:40:01.512",
+  "completedAt": "2026-09-18T12:40:01.538"
+}
 ```
 
-**How JPA derives it from the method name:**
-Spring Data JPA reads the method name and breaks it into parts. `findBy` tells JPA it is a SELECT query. `UpiId` tells JPA which field to filter on. JPA then looks at the `User` entity, finds the field `upiId`, maps it to the column `upi_id`, and generates the SQL automatically. No manual SQL is needed.
+### Errors
 
-**What the `?` placeholder means:**
-The `?` is a positional parameter placeholder. When the method is called with an actual value (e.g., `"priya@okaxis"`), JPA substitutes that value in place of `?` before executing the query. This is a prepared statement — it prevents SQL injection and improves performance.
+Every error has the same shape:
 
----
-
-## Custom Query Approaches — Comparison
-
-### 1. Derived Method Names
-```java
-User findByUpiId(String upiId);
-```
-JPA reads the method name and generates the SQL automatically. Simple, readable, and requires no extra annotations. Best for simple single-field lookups.
-
-### 2. @Query with JPQL
-```java
-@Query("SELECT u FROM User u WHERE u.balance >= :amount")
-List<User> findByBalanceGreaterThanEqual(@Param("amount") Double amount);
-```
-JPQL (Java Persistence Query Language) uses entity class names and field names — not table or column names. This means the query is database-independent. If the underlying database changes (e.g., from H2 to MySQL), the JPQL query still works without modification.
-
-### 3. Native SQL (shown for comparison only — not used in this project)
-```java
-@Query(value = "SELECT * FROM app_user WHERE balance >= :amount", nativeQuery = true)
-List<User> findByBalanceNative(@Param("amount") Double amount);
+```json
+{
+  "timestamp": "2026-09-18T07:10:01.120Z",
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "message": "Insufficient balance",
+  "path": "/transactions",
+  "failureReason": "INSUFFICIENT_BALANCE",
+  "transactionId": 2
+}
 ```
 
-**Why native queries are the least preferred:**
-Native SQL queries are tightly coupled to the specific database being used. If the database changes, the query must be rewritten. They also bypass JPA's entity mapping, meaning you lose the type safety and abstraction that JPA provides. Additionally, native queries use actual table and column names, which means any schema rename breaks the query. JPQL and derived method names are always preferred because they work across different databases and remain consistent with the entity model.
+| Status | When |
+|---|---|
+| 400 | Validation errors (with `fieldErrors`), malformed JSON, self-transfer |
+| 404 | Unknown user, sender, receiver or transaction |
+| 409 | Duplicate UPI ID, concurrent update after retries, same Idempotency-Key still in progress |
+| 422 | Insufficient balance, Idempotency-Key reused with a different body |
+
+## Project structure
+
+```
+src/main/java/com/example/payflow
+├── config        OpenAPI metadata
+├── controller    UserController, TransactionController, EventLogController
+├── dto           Request/response records, validation patterns, error and page shapes
+├── entity        User, Transaction, TransactionEvent and their enums
+├── exception     PayFlowException hierarchy and GlobalExceptionHandler
+├── repository    Spring Data JPA repositories (derived queries and JPQL)
+└── service       Transfer orchestration, processing, recording, statements, event log
+src/main/resources/db/migration   Flyway SQL migrations
+```
+
+## Known limitations and next steps
+
+- **Stuck `PENDING` transfers.** If the process crashes after a transfer is recorded as `PENDING` but before it finishes, the row stays `PENDING`. A scheduled reconciliation job would resolve these.
+- **Balances are updated in place.** A double-entry ledger (immutable debit/credit entries, with balance derived from them) is the usual next step for auditability.
+- **No authentication yet.** Any caller can move money from any account. Spring Security with per-user authorisation would come next.
+- **Single database.** Scaling out would mean sharding accounts. A transfer between accounts on different shards, or in different services, would need a saga or the outbox pattern instead of one local transaction.
