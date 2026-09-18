@@ -28,6 +28,26 @@ class OpenApiDocsTest extends IntegrationTestSupport {
     }
 
     @Test
+    void documentsEveryStatusCodeTheTransferEndpointReturns() throws Exception {
+        String post = "$.paths['/transactions'].post.responses";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(post + "['201']").exists())
+                .andExpect(jsonPath(post + "['200'].headers['Idempotent-Replayed']").exists())
+                .andExpect(jsonPath(post + "['400']").exists())
+                .andExpect(jsonPath(post + "['404']").exists())
+                .andExpect(jsonPath(post + "['409']").exists())
+                .andExpect(jsonPath(post + "['422']").exists())
+                .andExpect(jsonPath(post + "['500']").exists())
+                .andExpect(jsonPath(post + "['422'].content['application/json'].schema['$ref']")
+                        .value("#/components/schemas/ErrorResponse"))
+                .andExpect(jsonPath("$.paths['/users'].post.responses['201']").exists())
+                .andExpect(jsonPath("$.paths['/users'].post.responses['409']").exists())
+                .andExpect(jsonPath("$.paths['/users'].post.responses['200']").doesNotExist())
+                .andExpect(jsonPath("$.paths['/events/export'].get.responses['200'].content['text/csv']").exists());
+    }
+
+    @Test
     void servesSwaggerUi() throws Exception {
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk());
