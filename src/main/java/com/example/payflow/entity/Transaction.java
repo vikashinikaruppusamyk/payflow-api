@@ -9,8 +9,8 @@ public class Transaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long transactionId;
-    private String senderUpId;
-    private String receiverUpId;
+    private String senderUpiId;
+    private String receiverUpiId;
     private Double amount;
     private String note;
     private LocalDateTime timestamp;
@@ -18,9 +18,9 @@ public class Transaction {
     public Transaction() {
     }
 
-    public Transaction(String senderUpId, String receiverUpId, Double amount, String note) {
-        this.senderUpId = senderUpId;
-        this.receiverUpId = receiverUpId;
+    public Transaction(String senderUpiId, String receiverUpiId, Double amount, String note) {
+        this.senderUpiId = senderUpiId;
+        this.receiverUpiId = receiverUpiId;
         this.amount = amount;
         this.note = note;
         this.timestamp = LocalDateTime.now();
@@ -34,20 +34,20 @@ public class Transaction {
         this.transactionId = transactionId;
     }
 
-    public String getSenderUpId() {
-        return senderUpId;
+    public String getSenderUpiId() {
+        return senderUpiId;
     }
 
-    public void setSenderUpId(String senderUpId) {
-        this.senderUpId = senderUpId;
+    public void setSenderUpiId(String senderUpiId) {
+        this.senderUpiId = senderUpiId;
     }
 
-    public String getReceiverUpId() {
-        return receiverUpId;
+    public String getReceiverUpiId() {
+        return receiverUpiId;
     }
 
-    public void setReceiverUpId(String receiverUpId) {
-        this.receiverUpId = receiverUpId;
+    public void setReceiverUpiId(String receiverUpiId) {
+        this.receiverUpiId = receiverUpiId;
     }
 
     public Double getAmount() {

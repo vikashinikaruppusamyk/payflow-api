@@ -25,8 +25,8 @@ public class TransactionService {
         }
 
         // Look up sender and receiver
-        User sender = userRepository.findByUpiId(transaction.getSenderUpId());
-        User receiver = userRepository.findByUpiId(transaction.getReceiverUpId());
+        User sender = userRepository.findByUpiId(transaction.getSenderUpiId());
+        User receiver = userRepository.findByUpiId(transaction.getReceiverUpiId());
 
         if (sender == null) {
             throw new IllegalArgumentException("Sender UPI ID not found");

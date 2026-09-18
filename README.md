@@ -138,7 +138,7 @@ List<User> findByBalanceGreaterThanEqual(@Param("amount") Double amount);
 ```
 JPQL (Java Persistence Query Language) uses entity class names and field names — not table or column names. This means the query is database-independent. If the underlying database changes (e.g., from H2 to MySQL), the JPQL query still works without modification.
 
-### 3. Native SQL
+### 3. Native SQL (shown for comparison only — not used in this project)
 ```java
 @Query(value = "SELECT * FROM app_user WHERE balance >= :amount", nativeQuery = true)
 List<User> findByBalanceNative(@Param("amount") Double amount);
