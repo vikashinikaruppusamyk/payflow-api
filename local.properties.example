@@ -1,0 +1,5 @@
+# Copy this file to local.properties (ignored by git) and fill in your local PostgreSQL details.
+# Every value can also be supplied as an environment variable with the same name.
+DB_URL=jdbc:postgresql://localhost:5432/payflow
+DB_USERNAME=postgres
+DB_PASSWORD=

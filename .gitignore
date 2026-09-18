@@ -39,3 +39,6 @@ build/
 .DS_Store
 ### IntelliJ IDEA (all project files) ###
 .idea/
+
+### Local machine settings (database password etc.) ###
+local.properties

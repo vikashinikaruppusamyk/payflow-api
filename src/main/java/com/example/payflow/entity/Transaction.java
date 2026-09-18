@@ -5,12 +5,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "transaction", indexes = {
-        @Index(name = "idx_transaction_sender_created", columnList = "sender_upi_id, created_at"),
-        @Index(name = "idx_transaction_receiver_created", columnList = "receiver_upi_id, created_at")
+@Table(name = "transactions", indexes = {
+        @Index(name = "idx_transactions_sender_created", columnList = "sender_upi_id, created_at"),
+        @Index(name = "idx_transactions_receiver_created", columnList = "receiver_upi_id, created_at")
 }, uniqueConstraints = {
         // Idempotency keys are scoped per sender, so two clients can never collide on the same key
-        @UniqueConstraint(name = "uk_transaction_sender_idempotency_key", columnNames = {"sender_upi_id", "idempotency_key"})
+        @UniqueConstraint(name = "uk_transactions_sender_idempotency_key", columnNames = {"sender_upi_id", "idempotency_key"})
 })
 public class Transaction {
     @Id
