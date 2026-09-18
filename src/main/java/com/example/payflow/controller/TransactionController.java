@@ -1,8 +1,8 @@
 package com.example.payflow.controller;
 
-import com.example.payflow.entity.Transaction;
+import com.example.payflow.dto.TransactionResponse;
+import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.service.TransactionService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,16 +15,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class TransactionController {
     private final TransactionService transactionService;
 
-    @Autowired
     public TransactionController(TransactionService transactionService) {
         this.transactionService = transactionService;
     }
 
     @PostMapping
-    public ResponseEntity<?> sendMoney(@RequestBody Transaction transaction) {
+    public ResponseEntity<?> sendMoney(@RequestBody TransferRequest request) {
         try {
-            Transaction saved = transactionService.sendMoney(transaction);
-            return ResponseEntity.ok(saved);
+            TransactionResponse saved = TransactionResponse.from(transactionService.sendMoney(request));
+            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }

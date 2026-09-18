@@ -1,13 +1,16 @@
 package com.example.payflow.service;
 
+import com.example.payflow.dto.CreateUserRequest;
 import com.example.payflow.entity.User;
 import com.example.payflow.exception.DuplicateUpiIdException;
+import com.example.payflow.exception.UserNotFoundException;
 import com.example.payflow.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 
@@ -21,8 +24,8 @@ public class UserService {
     }
 
     @Transactional
-    public User registerUser(User user) {
-        String upiId = normalizeUpiId(user.getUpiId());
+    public User registerUser(CreateUserRequest request) {
+        String upiId = normalizeUpiId(request.upiId());
         if (upiId == null || upiId.isEmpty()) {
             throw new IllegalArgumentException("UPI ID is required");
         }
@@ -30,10 +33,9 @@ public class UserService {
         if (userRepository.existsByUpiId(upiId)) {
             throw new DuplicateUpiIdException(upiId);
         }
-        user.setUpiId(upiId);
-        if (user.getBalance() == null) {
-            user.setBalance(BigDecimal.ZERO);
-        }
+        BigDecimal initialBalance = request.initialBalance() == null ? BigDecimal.ZERO : request.initialBalance();
+        initialBalance = initialBalance.setScale(2, RoundingMode.UNNECESSARY);
+        User user = new User(request.name() == null ? null : request.name().trim(), upiId, initialBalance, request.phoneNumber());
         return userRepository.save(user);
     }
 
@@ -44,12 +46,16 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public User getUserById(Long userId) {
-        return userRepository.findById(userId).orElse(null);
+        return userRepository.findById(userId).orElseThrow(() -> UserNotFoundException.byId(userId));
     }
 
     @Transactional(readOnly = true)
     public User findByUpiId(String upiId) {
-        return userRepository.findByUpiId(normalizeUpiId(upiId));
+        User user = userRepository.findByUpiId(normalizeUpiId(upiId));
+        if (user == null) {
+            throw UserNotFoundException.byUpiId(upiId);
+        }
+        return user;
     }
 
     @Transactional(readOnly = true)

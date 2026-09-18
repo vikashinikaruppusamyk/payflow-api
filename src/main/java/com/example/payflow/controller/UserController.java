@@ -1,11 +1,15 @@
 package com.example.payflow.controller;
 
+import com.example.payflow.dto.CreateUserRequest;
+import com.example.payflow.dto.UserResponse;
 import com.example.payflow.entity.User;
 import com.example.payflow.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -13,33 +17,34 @@ import java.util.List;
 public class UserController {
     private final UserService userService;
 
-    @Autowired
     public UserController(UserService userService) {
         this.userService = userService;
     }
 
     @PostMapping
-    public User createUser(@RequestBody User user) {
-        return userService.registerUser(user);
+    public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest request) {
+        User user = userService.registerUser(request);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{userId}").buildAndExpand(user.getUserId()).toUri();
+        return ResponseEntity.created(location).body(UserResponse.from(user));
     }
 
+    // GET /users lists everyone; GET /users?minBalance=500 filters by balance
     @GetMapping
-    public List<User> getAllUsers() {
-        return userService.getAllUsers();
+    public List<UserResponse> getUsers(@RequestParam(required = false) BigDecimal minBalance) {
+        List<User> users = minBalance == null
+                ? userService.getAllUsers()
+                : userService.findByBalanceGreaterThanEqual(minBalance);
+        return users.stream().map(UserResponse::from).toList();
     }
 
     @GetMapping("/{userId}")
-    public User getUserById(@PathVariable Long userId) {
-        return userService.getUserById(userId);
+    public UserResponse getUserById(@PathVariable Long userId) {
+        return UserResponse.from(userService.getUserById(userId));
     }
 
     @GetMapping("/upi/{upiId}")
-    public User getUserByUpiId(@PathVariable String upiId) {
-        return userService.findByUpiId(upiId);
-    }
-
-    @GetMapping("/balance/{balance}")
-    public List<User> getUsersByBalance(@PathVariable BigDecimal balance) {
-        return userService.findByBalanceGreaterThanEqual(balance);
+    public UserResponse getUserByUpiId(@PathVariable String upiId) {
+        return UserResponse.from(userService.findByUpiId(upiId));
     }
 }
