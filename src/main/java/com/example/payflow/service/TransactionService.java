@@ -1,28 +1,25 @@
 package com.example.payflow.service;
 
 import com.example.payflow.entity.Transaction;
-import com.example.payflow.entity.User;
-import com.example.payflow.repository.TransactionRepository;
-import com.example.payflow.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.example.payflow.exception.ConcurrentTransferException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class TransactionService {
-    private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
+    private final TransferProcessor transferProcessor;
+    private final int maxAttempts;
 
-    @Autowired
-    public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository) {
-        this.transactionRepository = transactionRepository;
-        this.userRepository = userRepository;
+    public TransactionService(TransferProcessor transferProcessor,
+                              @Value("${payflow.transfer.max-attempts:3}") int maxAttempts) {
+        this.transferProcessor = transferProcessor;
+        this.maxAttempts = maxAttempts;
     }
 
-    // Debit, credit and the transaction record commit together or not at all
-    @Transactional
     public Transaction sendMoney(Transaction transaction) {
         // Validate amount is positive
         if (transaction.getAmount() == null || transaction.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -32,35 +29,31 @@ public class TransactionService {
             throw new IllegalArgumentException("Transfer amount can have at most 2 decimal places");
         }
 
-        transaction.setSenderUpiId(UserService.normalizeUpiId(transaction.getSenderUpiId()));
-        transaction.setReceiverUpiId(UserService.normalizeUpiId(transaction.getReceiverUpiId()));
+        String senderUpiId = UserService.normalizeUpiId(transaction.getSenderUpiId());
+        String receiverUpiId = UserService.normalizeUpiId(transaction.getReceiverUpiId());
 
-        // Look up sender and receiver
-        User sender = userRepository.findByUpiId(transaction.getSenderUpiId());
-        User receiver = userRepository.findByUpiId(transaction.getReceiverUpiId());
-
-        if (sender == null) {
-            throw new IllegalArgumentException("Sender UPI ID not found");
+        // Optimistic locking: conflicts are rare, so instead of holding row locks while we check the
+        // balance we detect a concurrent update at commit time and retry the whole attempt.
+        // ConcurrencyFailureException covers both version conflicts and database lock/deadlock errors.
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return transferProcessor.transfer(senderUpiId, receiverUpiId, transaction.getAmount(), transaction.getNote());
+            } catch (ConcurrencyFailureException e) {
+                if (attempt >= maxAttempts) {
+                    throw new ConcurrentTransferException(attempt);
+                }
+                backOff(attempt);
+            }
         }
-        if (receiver == null) {
-            throw new IllegalArgumentException("Receiver UPI ID not found");
+    }
+
+    // Short randomised pause so competing requests do not collide again immediately
+    private static void backOff(int attempt) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(10, 50L * attempt + 10));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while retrying transfer", e);
         }
-
-        // Validate sufficient balance
-        if (sender.getBalance().compareTo(transaction.getAmount()) < 0) {
-            throw new IllegalArgumentException("Insufficient balance");
-        }
-
-        // Deduct from sender, credit to receiver
-        sender.setBalance(sender.getBalance().subtract(transaction.getAmount()));
-        receiver.setBalance(receiver.getBalance().add(transaction.getAmount()));
-
-        userRepository.save(sender);
-        userRepository.save(receiver);
-
-        // Set timestamp at the moment the transaction is actually processed
-        transaction.setTimestamp(java.time.LocalDateTime.now());
-
-        return transactionRepository.save(transaction);
     }
 }

@@ -17,6 +17,10 @@ public class User {
     private BigDecimal balance;
     private String phoneNumber;
 
+    // Incremented on every update; used for optimistic locking of balance changes
+    @Version
+    private Long version;
+
     public User() {
     }
 
@@ -65,5 +69,9 @@ public class User {
 
     public void setPhoneNumber(String phoneNumber) {
         this.phoneNumber = phoneNumber;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 }
