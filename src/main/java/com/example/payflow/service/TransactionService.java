@@ -6,6 +6,7 @@ import com.example.payflow.repository.TransactionRepository;
 import com.example.payflow.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 
@@ -20,6 +21,8 @@ public class TransactionService {
         this.userRepository = userRepository;
     }
 
+    // Debit, credit and the transaction record commit together or not at all
+    @Transactional
     public Transaction sendMoney(Transaction transaction) {
         // Validate amount is positive
         if (transaction.getAmount() == null || transaction.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
