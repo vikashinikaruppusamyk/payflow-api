@@ -4,6 +4,8 @@ import com.example.payflow.dto.CreateUserRequest;
 import com.example.payflow.dto.UserResponse;
 import com.example.payflow.entity.User;
 import com.example.payflow.service.UserService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -22,7 +24,7 @@ public class UserController {
     }
 
     @PostMapping
-    public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest request) {
+    public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
         User user = userService.registerUser(request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{userId}").buildAndExpand(user.getUserId()).toUri();
@@ -31,7 +33,7 @@ public class UserController {
 
     // GET /users lists everyone; GET /users?minBalance=500 filters by balance
     @GetMapping
-    public List<UserResponse> getUsers(@RequestParam(required = false) BigDecimal minBalance) {
+    public List<UserResponse> getUsers(@RequestParam(required = false) @PositiveOrZero BigDecimal minBalance) {
         List<User> users = minBalance == null
                 ? userService.getAllUsers()
                 : userService.findByBalanceGreaterThanEqual(minBalance);

@@ -3,6 +3,7 @@ package com.example.payflow.service;
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.entity.Transaction;
 import com.example.payflow.exception.ConcurrentTransferException;
+import com.example.payflow.exception.InvalidTransferException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.stereotype.Service;
@@ -23,17 +24,13 @@ public class TransactionService {
     }
 
     public Transaction sendMoney(TransferRequest request) {
-        // Validate amount is positive
-        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Transfer amount must be greater than zero");
-        }
-        if (request.amount().stripTrailingZeros().scale() > 2) {
-            throw new IllegalArgumentException("Transfer amount can have at most 2 decimal places");
-        }
-
+        // Field-level rules (formats, amount range, decimals) are enforced by Bean Validation on TransferRequest
         BigDecimal amount = request.amount().setScale(2, RoundingMode.UNNECESSARY);
         String senderUpiId = UserService.normalizeUpiId(request.senderUpiId());
         String receiverUpiId = UserService.normalizeUpiId(request.receiverUpiId());
+        if (senderUpiId.equals(receiverUpiId)) {
+            throw new InvalidTransferException("Sender and receiver cannot be the same account");
+        }
 
         // Optimistic locking: conflicts are rare, so instead of holding row locks while we check the
         // balance we detect a concurrent update at commit time and retry the whole attempt.

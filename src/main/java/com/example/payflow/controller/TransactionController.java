@@ -3,6 +3,7 @@ package com.example.payflow.controller;
 import com.example.payflow.dto.TransactionResponse;
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.service.TransactionService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,7 +21,7 @@ public class TransactionController {
     }
 
     @PostMapping
-    public ResponseEntity<?> sendMoney(@RequestBody TransferRequest request) {
+    public ResponseEntity<?> sendMoney(@Valid @RequestBody TransferRequest request) {
         try {
             TransactionResponse saved = TransactionResponse.from(transactionService.sendMoney(request));
             return ResponseEntity.status(HttpStatus.CREATED).body(saved);

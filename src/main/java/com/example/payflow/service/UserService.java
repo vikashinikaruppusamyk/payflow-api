@@ -26,16 +26,13 @@ public class UserService {
     @Transactional
     public User registerUser(CreateUserRequest request) {
         String upiId = normalizeUpiId(request.upiId());
-        if (upiId == null || upiId.isEmpty()) {
-            throw new IllegalArgumentException("UPI ID is required");
-        }
         // Fast check for a friendly error; the unique constraint still guards concurrent registrations
         if (userRepository.existsByUpiId(upiId)) {
             throw new DuplicateUpiIdException(upiId);
         }
         BigDecimal initialBalance = request.initialBalance() == null ? BigDecimal.ZERO : request.initialBalance();
         initialBalance = initialBalance.setScale(2, RoundingMode.UNNECESSARY);
-        User user = new User(request.name() == null ? null : request.name().trim(), upiId, initialBalance, request.phoneNumber());
+        User user = new User(request.name().trim(), upiId, initialBalance, request.phoneNumber());
         return userRepository.save(user);
     }
 
