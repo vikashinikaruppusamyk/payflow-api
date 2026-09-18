@@ -33,7 +33,7 @@ public class UserController {
 
     // GET /users lists everyone; GET /users?minBalance=500 filters by balance
     @GetMapping
-    public List<UserResponse> getUsers(@RequestParam(required = false) @PositiveOrZero BigDecimal minBalance) {
+    public List<UserResponse> getUsers(@RequestParam(required = false) @PositiveOrZero(message = "minBalance cannot be negative") BigDecimal minBalance) {
         List<User> users = minBalance == null
                 ? userService.getAllUsers()
                 : userService.findByBalanceGreaterThanEqual(minBalance);

@@ -1,11 +1,9 @@
 package com.example.payflow.exception;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
-@ResponseStatus(HttpStatus.BAD_REQUEST)
-public class InvalidTransferException extends RuntimeException {
+public class InvalidTransferException extends PayFlowException {
     public InvalidTransferException(String message) {
-        super(message);
+        super(HttpStatus.BAD_REQUEST, message);
     }
 }

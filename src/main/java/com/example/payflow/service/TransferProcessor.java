@@ -2,6 +2,8 @@ package com.example.payflow.service;
 
 import com.example.payflow.entity.Transaction;
 import com.example.payflow.entity.User;
+import com.example.payflow.exception.InsufficientBalanceException;
+import com.example.payflow.exception.UserNotFoundException;
 import com.example.payflow.repository.TransactionRepository;
 import com.example.payflow.repository.UserRepository;
 import org.springframework.stereotype.Component;
@@ -32,13 +34,13 @@ public class TransferProcessor {
         User receiver = userRepository.findByUpiId(receiverUpiId);
 
         if (sender == null) {
-            throw new IllegalArgumentException("Sender UPI ID not found");
+            throw new UserNotFoundException("Sender UPI ID not found: " + senderUpiId);
         }
         if (receiver == null) {
-            throw new IllegalArgumentException("Receiver UPI ID not found");
+            throw new UserNotFoundException("Receiver UPI ID not found: " + receiverUpiId);
         }
         if (sender.getBalance().compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient balance");
+            throw new InsufficientBalanceException();
         }
 
         // Both rows carry a @Version; if another transfer changed either user since we read it,
