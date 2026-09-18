@@ -8,6 +8,7 @@ import com.example.payflow.entity.User;
 import com.example.payflow.exception.TransferFailedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
@@ -36,6 +37,17 @@ class TransferAtomicityTest extends IntegrationTestSupport {
         assertThat(balanceOf("ravi@oksbi")).isEqualByComparingTo("99999999999999999.99");
         assertThat(transactionRepository.countByStatus(TransactionStatus.SUCCESS)).isZero();
         assertThat(transactionRepository.countByStatus(TransactionStatus.FAILED)).isEqualTo(1);
+    }
+
+    @Test
+    void databaseRejectsNegativeBalanceEvenIfApplicationCheckIsBypassed() {
+        Long id = createUser("priya@okaxis", "10.00").getUserId();
+        User user = userRepository.findById(id).orElseThrow();
+        user.setBalance(new BigDecimal("-0.01"));
+
+        assertThatThrownBy(() -> userRepository.saveAndFlush(user))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(balanceOf("priya@okaxis")).isEqualByComparingTo("10.00");
     }
 
     @Test

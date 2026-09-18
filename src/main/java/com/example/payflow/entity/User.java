@@ -10,15 +10,18 @@ public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long userId;
+    @Column(nullable = false, length = 100)
     private String name;
-    @Column(unique = true, nullable = false)
+    @Column(unique = true, nullable = false, length = 100)
     private String upiId;
-    @Column(precision = 19, scale = 2)
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal balance;
+    @Column(length = 15)
     private String phoneNumber;
 
     // Incremented on every update; used for optimistic locking of balance changes
     @Version
+    @Column(nullable = false)
     private Long version;
 
     public User() {

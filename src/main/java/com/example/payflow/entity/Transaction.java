@@ -16,9 +16,9 @@ public class Transaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long transactionId;
-    @Column(nullable = false)
+    @Column(nullable = false, length = 100)
     private String senderUpiId;
-    @Column(nullable = false)
+    @Column(nullable = false, length = 100)
     private String receiverUpiId;
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
