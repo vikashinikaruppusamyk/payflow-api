@@ -121,7 +121,7 @@ The schema is versioned with Flyway, and Hibernate runs with `ddl-auto=validate`
 ./mvnw verify
 ```
 
-The suite has 61 tests: unit tests, API tests and concurrency tests. It runs against an in-memory H2 database in PostgreSQL mode, so it needs no setup. The coverage report is written to `target/site/jacoco/index.html` (about 93% line coverage, 97% in the service layer).
+The suite has 62 tests: unit tests, API tests and concurrency tests. It runs against an in-memory H2 database in PostgreSQL mode, so it needs no setup. The coverage report is written to `target/site/jacoco/index.html` (about 93% line coverage, 97% in the service layer).
 
 To run the same suite against a real PostgreSQL database, set:
 - `TEST_DB_URL`, e.g. `jdbc:postgresql://localhost:5432/payflow_test`
