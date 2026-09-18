@@ -1,0 +1,4 @@
+# Keep shell scripts runnable on Linux CI regardless of local line-ending settings
+mvnw text eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
