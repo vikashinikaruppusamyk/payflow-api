@@ -10,12 +10,25 @@ public class Transaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long transactionId;
+    @Column(nullable = false)
     private String senderUpiId;
+    @Column(nullable = false)
     private String receiverUpiId;
-    @Column(precision = 19, scale = 2)
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
     private String note;
-    private LocalDateTime timestamp;
+
+    // Every attempt is recorded: PENDING when accepted, then SUCCESS or FAILED
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TransactionStatus status;
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private FailureReason failureReason;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
+    private LocalDateTime completedAt;
 
     public Transaction() {
     }
@@ -25,54 +38,55 @@ public class Transaction {
         this.receiverUpiId = receiverUpiId;
         this.amount = amount;
         this.note = note;
-        this.timestamp = LocalDateTime.now();
+        this.status = TransactionStatus.PENDING;
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public void markSucceeded() {
+        this.status = TransactionStatus.SUCCESS;
+        this.failureReason = null;
+        this.completedAt = LocalDateTime.now();
+    }
+
+    public void markFailed(FailureReason reason) {
+        this.status = TransactionStatus.FAILED;
+        this.failureReason = reason;
+        this.completedAt = LocalDateTime.now();
     }
 
     public Long getTransactionId() {
         return transactionId;
     }
 
-    public void setTransactionId(Long transactionId) {
-        this.transactionId = transactionId;
-    }
-
     public String getSenderUpiId() {
         return senderUpiId;
-    }
-
-    public void setSenderUpiId(String senderUpiId) {
-        this.senderUpiId = senderUpiId;
     }
 
     public String getReceiverUpiId() {
         return receiverUpiId;
     }
 
-    public void setReceiverUpiId(String receiverUpiId) {
-        this.receiverUpiId = receiverUpiId;
-    }
-
     public BigDecimal getAmount() {
         return amount;
-    }
-
-    public void setAmount(BigDecimal amount) {
-        this.amount = amount;
     }
 
     public String getNote() {
         return note;
     }
 
-    public void setNote(String note) {
-        this.note = note;
+    public TransactionStatus getStatus() {
+        return status;
     }
 
-    public LocalDateTime getTimestamp() {
-        return timestamp;
+    public FailureReason getFailureReason() {
+        return failureReason;
     }
 
-    public void setTimestamp(LocalDateTime timestamp) {
-        this.timestamp = timestamp;
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getCompletedAt() {
+        return completedAt;
     }
 }

@@ -2,8 +2,8 @@ package com.example.payflow.service;
 
 import com.example.payflow.IntegrationTestSupport;
 import com.example.payflow.dto.TransferRequest;
-import com.example.payflow.exception.ConcurrentTransferException;
-import com.example.payflow.exception.InsufficientBalanceException;
+import com.example.payflow.entity.TransactionStatus;
+import com.example.payflow.exception.TransferFailedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -60,7 +60,9 @@ class ConcurrentTransferTest extends IntegrationTestSupport {
         assertThat(outcomes.get(Outcome.INSUFFICIENT_BALANCE)).isZero();
         assertThat(balanceOf("sender@okaxis")).isEqualByComparingTo(new BigDecimal("1000.00").subtract(moved));
         assertThat(received).isEqualByComparingTo(moved);
-        assertThat(transactionRepository.count()).isEqualTo(successes);
+        assertThat(transactionRepository.countByStatus(TransactionStatus.SUCCESS)).isEqualTo(successes);
+        assertThat(transactionRepository.countByStatus(TransactionStatus.FAILED)).isEqualTo(100 - successes);
+        assertThat(transactionRepository.countByStatus(TransactionStatus.PENDING)).isZero();
     }
 
     @Test
@@ -114,10 +116,12 @@ class ConcurrentTransferTest extends IntegrationTestSupport {
                     try {
                         transactionService.sendMoney(request);
                         return Outcome.SUCCESS;
-                    } catch (ConcurrentTransferException e) {
-                        return Outcome.CONFLICT;
-                    } catch (InsufficientBalanceException e) {
-                        return Outcome.INSUFFICIENT_BALANCE;
+                    } catch (TransferFailedException e) {
+                        return switch (e.getReason()) {
+                            case CONCURRENT_UPDATE -> Outcome.CONFLICT;
+                            case INSUFFICIENT_BALANCE -> Outcome.INSUFFICIENT_BALANCE;
+                            default -> throw e;
+                        };
                     }
                 }));
             }

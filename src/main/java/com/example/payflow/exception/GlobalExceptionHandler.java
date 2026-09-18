@@ -36,6 +36,14 @@ public class GlobalExceptionHandler {
         return build(e.getStatus(), e.getMessage(), request, null);
     }
 
+    // Failed transfers also report the reason code and the id of the FAILED transaction record
+    @ExceptionHandler(TransferFailedException.class)
+    public ResponseEntity<ErrorResponse> handleTransferFailed(TransferFailedException e, HttpServletRequest request) {
+        ErrorResponse body = new ErrorResponse(Instant.now(), e.getStatus().value(), e.getStatus().getReasonPhrase(),
+                e.getMessage(), request.getRequestURI(), null, e.getReason().name(), e.getTransactionId());
+        return ResponseEntity.status(e.getStatus()).body(body);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleInvalidBody(MethodArgumentNotValidException e, HttpServletRequest request) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
@@ -102,7 +110,7 @@ public class GlobalExceptionHandler {
     private static ResponseEntity<ErrorResponse> build(HttpStatus status, String message, HttpServletRequest request,
                                                        Map<String, String> fieldErrors) {
         ErrorResponse body = new ErrorResponse(Instant.now(), status.value(), status.getReasonPhrase(), message,
-                request.getRequestURI(), fieldErrors);
+                request.getRequestURI(), fieldErrors, null, null);
         return ResponseEntity.status(status).body(body);
     }
 }

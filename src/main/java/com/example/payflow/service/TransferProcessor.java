@@ -2,15 +2,13 @@ package com.example.payflow.service;
 
 import com.example.payflow.entity.Transaction;
 import com.example.payflow.entity.User;
-import com.example.payflow.exception.InsufficientBalanceException;
-import com.example.payflow.exception.UserNotFoundException;
+import com.example.payflow.exception.TransferFailedException;
 import com.example.payflow.repository.TransactionRepository;
 import com.example.payflow.repository.UserRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 /**
  * Runs a single transfer attempt inside one database transaction.
@@ -27,20 +25,23 @@ public class TransferProcessor {
         this.userRepository = userRepository;
     }
 
-    // Debit, credit and the transaction record commit together or not at all
+    // Debit, credit and the SUCCESS status commit together or not at all
     @Transactional
-    public Transaction transfer(String senderUpiId, String receiverUpiId, BigDecimal amount, String note) {
-        User sender = userRepository.findByUpiId(senderUpiId);
-        User receiver = userRepository.findByUpiId(receiverUpiId);
+    public Transaction execute(Long transactionId) {
+        Transaction transaction = transactionRepository.findById(transactionId).orElseThrow();
+        BigDecimal amount = transaction.getAmount();
+
+        User sender = userRepository.findByUpiId(transaction.getSenderUpiId());
+        User receiver = userRepository.findByUpiId(transaction.getReceiverUpiId());
 
         if (sender == null) {
-            throw new UserNotFoundException("Sender UPI ID not found: " + senderUpiId);
+            throw TransferFailedException.senderNotFound(transaction.getSenderUpiId(), transactionId);
         }
         if (receiver == null) {
-            throw new UserNotFoundException("Receiver UPI ID not found: " + receiverUpiId);
+            throw TransferFailedException.receiverNotFound(transaction.getReceiverUpiId(), transactionId);
         }
         if (sender.getBalance().compareTo(amount) < 0) {
-            throw new InsufficientBalanceException();
+            throw TransferFailedException.insufficientBalance(transactionId);
         }
 
         // Both rows carry a @Version; if another transfer changed either user since we read it,
@@ -48,8 +49,7 @@ public class TransferProcessor {
         sender.setBalance(sender.getBalance().subtract(amount));
         receiver.setBalance(receiver.getBalance().add(amount));
 
-        Transaction transaction = new Transaction(senderUpiId, receiverUpiId, amount, note);
-        transaction.setTimestamp(LocalDateTime.now());
-        return transactionRepository.save(transaction);
+        transaction.markSucceeded();
+        return transaction;
     }
 }

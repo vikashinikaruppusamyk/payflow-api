@@ -12,6 +12,8 @@ public record ErrorResponse(
         String error,
         String message,
         String path,
-        Map<String, String> fieldErrors
+        Map<String, String> fieldErrors,
+        String failureReason,
+        Long transactionId
 ) {
 }

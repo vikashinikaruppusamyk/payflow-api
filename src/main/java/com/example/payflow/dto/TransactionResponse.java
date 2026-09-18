@@ -1,6 +1,8 @@
 package com.example.payflow.dto;
 
+import com.example.payflow.entity.FailureReason;
 import com.example.payflow.entity.Transaction;
+import com.example.payflow.entity.TransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -11,10 +13,14 @@ public record TransactionResponse(
         String receiverUpiId,
         BigDecimal amount,
         String note,
-        LocalDateTime timestamp
+        TransactionStatus status,
+        FailureReason failureReason,
+        LocalDateTime createdAt,
+        LocalDateTime completedAt
 ) {
     public static TransactionResponse from(Transaction transaction) {
         return new TransactionResponse(transaction.getTransactionId(), transaction.getSenderUpiId(),
-                transaction.getReceiverUpiId(), transaction.getAmount(), transaction.getNote(), transaction.getTimestamp());
+                transaction.getReceiverUpiId(), transaction.getAmount(), transaction.getNote(), transaction.getStatus(),
+                transaction.getFailureReason(), transaction.getCreatedAt(), transaction.getCompletedAt());
     }
 }

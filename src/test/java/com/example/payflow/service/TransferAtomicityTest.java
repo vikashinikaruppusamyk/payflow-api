@@ -2,10 +2,12 @@ package com.example.payflow.service;
 
 import com.example.payflow.IntegrationTestSupport;
 import com.example.payflow.dto.TransferRequest;
+import com.example.payflow.entity.FailureReason;
+import com.example.payflow.entity.TransactionStatus;
 import com.example.payflow.entity.User;
+import com.example.payflow.exception.TransferFailedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.math.BigDecimal;
@@ -27,11 +29,13 @@ class TransferAtomicityTest extends IntegrationTestSupport {
 
         assertThatThrownBy(() -> transactionService.sendMoney(
                 new TransferRequest("priya@okaxis", "ravi@oksbi", new BigDecimal("100.00"), null)))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                .isInstanceOfSatisfying(TransferFailedException.class,
+                        e -> assertThat(e.getReason()).isEqualTo(FailureReason.SYSTEM_ERROR));
 
         assertThat(balanceOf("priya@okaxis")).isEqualByComparingTo("1000.00");
         assertThat(balanceOf("ravi@oksbi")).isEqualByComparingTo("99999999999999999.99");
-        assertThat(transactionRepository.count()).isZero();
+        assertThat(transactionRepository.countByStatus(TransactionStatus.SUCCESS)).isZero();
+        assertThat(transactionRepository.countByStatus(TransactionStatus.FAILED)).isEqualTo(1);
     }
 
     @Test
