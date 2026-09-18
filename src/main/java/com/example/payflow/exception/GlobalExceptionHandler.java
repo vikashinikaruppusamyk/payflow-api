@@ -55,8 +55,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponse> handleInvalidParameter(HandlerMethodValidationException e, HttpServletRequest request) {
+        // Raised when a handler has constraints on plain parameters (query params, headers); any @Valid
+        // request body on the same handler is reported here too, as bean results with field errors
         Map<String, String> fieldErrors = new LinkedHashMap<>();
-        e.getParameterValidationResults().forEach(result -> fieldErrors.putIfAbsent(
+        e.getBeanResults().forEach(beanResult -> beanResult.getFieldErrors().forEach(fieldError ->
+                fieldErrors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage())));
+        e.getValueResults().forEach(result -> fieldErrors.putIfAbsent(
                 result.getMethodParameter().getParameterName(),
                 result.getResolvableErrors().get(0).getDefaultMessage()));
         return build(HttpStatus.BAD_REQUEST, "Request validation failed", request, fieldErrors);

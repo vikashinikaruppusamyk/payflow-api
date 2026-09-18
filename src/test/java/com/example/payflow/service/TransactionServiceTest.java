@@ -3,8 +3,10 @@ package com.example.payflow.service;
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.entity.FailureReason;
 import com.example.payflow.entity.Transaction;
+import com.example.payflow.exception.IdempotencyKeyReuseException;
 import com.example.payflow.exception.InvalidTransferException;
 import com.example.payflow.exception.TransferFailedException;
+import com.example.payflow.exception.TransferInProgressException;
 import com.example.payflow.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,7 +54,7 @@ class TransactionServiceTest {
     private Transaction stubPending() {
         Transaction pending = new Transaction("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), null);
         ReflectionTestUtils.setField(pending, "transactionId", TRANSACTION_ID);
-        when(transactionRecorder.createPending(anyString(), anyString(), any(), any())).thenReturn(pending);
+        when(transactionRecorder.createPending(anyString(), anyString(), any(), any(), any())).thenReturn(pending);
         return pending;
     }
 
@@ -68,7 +71,7 @@ class TransactionServiceTest {
                 new TransferRequest(" Priya@OkAxis ", "RAVI@oksbi", new BigDecimal("10"), "tea"));
 
         assertThat(result).isSameAs(pending);
-        verify(transactionRecorder).createPending("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), "tea");
+        verify(transactionRecorder).createPending("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), "tea", null);
         verify(transactionRecorder, never()).markFailed(anyLong(), any());
     }
 
@@ -78,7 +81,7 @@ class TransactionServiceTest {
                 new TransferRequest("priya@okaxis", "PRIYA@okaxis", BigDecimal.TEN, null)))
                 .isInstanceOf(InvalidTransferException.class);
 
-        verify(transactionRecorder, never()).createPending(anyString(), anyString(), any(), any());
+        verify(transactionRecorder, never()).createPending(anyString(), anyString(), any(), any(), any());
         verify(transferProcessor, never()).execute(anyLong());
     }
 
@@ -121,6 +124,52 @@ class TransactionServiceTest {
 
         verify(transferProcessor, times(1)).execute(TRANSACTION_ID);
         verify(transactionRecorder).markFailed(TRANSACTION_ID, FailureReason.INSUFFICIENT_BALANCE);
+    }
+
+    @Test
+    void replaysSuccessfulTransferForSameIdempotencyKey() {
+        Transaction previous = new Transaction("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), null, "key-1");
+        previous.markSucceeded();
+        when(transactionRepository.findBySenderUpiIdAndIdempotencyKey("priya@okaxis", "key-1")).thenReturn(Optional.of(previous));
+
+        TransferResult result = transactionService.sendMoney(request(), "key-1");
+
+        assertThat(result.replayed()).isTrue();
+        assertThat(result.transaction()).isSameAs(previous);
+        verify(transactionRecorder, never()).createPending(anyString(), anyString(), any(), any(), any());
+        verify(transferProcessor, never()).execute(anyLong());
+    }
+
+    @Test
+    void replaysFailedTransferAsTheSameFailure() {
+        Transaction previous = new Transaction("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), null, "key-1");
+        previous.markFailed(FailureReason.INSUFFICIENT_BALANCE);
+        when(transactionRepository.findBySenderUpiIdAndIdempotencyKey("priya@okaxis", "key-1")).thenReturn(Optional.of(previous));
+
+        assertThatThrownBy(() -> transactionService.sendMoney(request(), "key-1"))
+                .isInstanceOfSatisfying(TransferFailedException.class,
+                        e -> assertThat(e.getReason()).isEqualTo(FailureReason.INSUFFICIENT_BALANCE));
+        verify(transferProcessor, never()).execute(anyLong());
+    }
+
+    @Test
+    void rejectsIdempotencyKeyReusedForDifferentRequest() {
+        Transaction previous = new Transaction("priya@okaxis", "ravi@oksbi", new BigDecimal("99.00"), null, "key-1");
+        previous.markSucceeded();
+        when(transactionRepository.findBySenderUpiIdAndIdempotencyKey("priya@okaxis", "key-1")).thenReturn(Optional.of(previous));
+
+        assertThatThrownBy(() -> transactionService.sendMoney(request(), "key-1"))
+                .isInstanceOf(IdempotencyKeyReuseException.class);
+        verify(transferProcessor, never()).execute(anyLong());
+    }
+
+    @Test
+    void reportsInFlightRequestWithSameKey() {
+        Transaction previous = new Transaction("priya@okaxis", "ravi@oksbi", new BigDecimal("10.00"), null, "key-1");
+        when(transactionRepository.findBySenderUpiIdAndIdempotencyKey("priya@okaxis", "key-1")).thenReturn(Optional.of(previous));
+
+        assertThatThrownBy(() -> transactionService.sendMoney(request(), "key-1"))
+                .isInstanceOf(TransferInProgressException.class);
     }
 
     @Test

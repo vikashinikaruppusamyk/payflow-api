@@ -1,6 +1,7 @@
 package com.example.payflow.exception;
 
 import com.example.payflow.entity.FailureReason;
+import com.example.payflow.entity.Transaction;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -36,6 +37,19 @@ public class TransferFailedException extends PayFlowException {
 
     public static TransferFailedException systemError(Long transactionId) {
         return new TransferFailedException(FailureReason.SYSTEM_ERROR, "Transfer failed due to an internal error", transactionId);
+    }
+
+    // Rebuilds the original failure when a request with the same Idempotency-Key is replayed
+    public static TransferFailedException replayOf(Transaction failed) {
+        Long id = failed.getTransactionId();
+        return switch (failed.getFailureReason()) {
+            case SENDER_NOT_FOUND -> senderNotFound(failed.getSenderUpiId(), id);
+            case RECEIVER_NOT_FOUND -> receiverNotFound(failed.getReceiverUpiId(), id);
+            case INSUFFICIENT_BALANCE -> insufficientBalance(id);
+            case CONCURRENT_UPDATE -> new TransferFailedException(FailureReason.CONCURRENT_UPDATE,
+                    "Transfer failed because the account was being updated concurrently. Retry with a new Idempotency-Key.", id);
+            case SYSTEM_ERROR -> systemError(id);
+        };
     }
 
     private static HttpStatus statusFor(FailureReason reason) {

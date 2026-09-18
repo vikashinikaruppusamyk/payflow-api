@@ -8,6 +8,9 @@ import java.time.LocalDateTime;
 @Table(name = "transaction", indexes = {
         @Index(name = "idx_transaction_sender_created", columnList = "sender_upi_id, created_at"),
         @Index(name = "idx_transaction_receiver_created", columnList = "receiver_upi_id, created_at")
+}, uniqueConstraints = {
+        // Idempotency keys are scoped per sender, so two clients can never collide on the same key
+        @UniqueConstraint(name = "uk_transaction_sender_idempotency_key", columnNames = {"sender_upi_id", "idempotency_key"})
 })
 public class Transaction {
     @Id
@@ -20,6 +23,8 @@ public class Transaction {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
     private String note;
+    @Column(length = 100)
+    private String idempotencyKey;
 
     // Every attempt is recorded: PENDING when accepted, then SUCCESS or FAILED
     @Enumerated(EnumType.STRING)
@@ -37,6 +42,11 @@ public class Transaction {
     }
 
     public Transaction(String senderUpiId, String receiverUpiId, BigDecimal amount, String note) {
+        this(senderUpiId, receiverUpiId, amount, note, null);
+    }
+
+    public Transaction(String senderUpiId, String receiverUpiId, BigDecimal amount, String note, String idempotencyKey) {
+        this.idempotencyKey = idempotencyKey;
         this.senderUpiId = senderUpiId;
         this.receiverUpiId = receiverUpiId;
         this.amount = amount;
@@ -75,6 +85,10 @@ public class Transaction {
 
     public String getNote() {
         return note;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
     }
 
     public TransactionStatus getStatus() {

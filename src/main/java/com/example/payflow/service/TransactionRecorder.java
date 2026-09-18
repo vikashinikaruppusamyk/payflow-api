@@ -23,8 +23,9 @@ public class TransactionRecorder {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Transaction createPending(String senderUpiId, String receiverUpiId, BigDecimal amount, String note) {
-        return transactionRepository.save(new Transaction(senderUpiId, receiverUpiId, amount, note));
+    public Transaction createPending(String senderUpiId, String receiverUpiId, BigDecimal amount, String note,
+                                     String idempotencyKey) {
+        return transactionRepository.save(new Transaction(senderUpiId, receiverUpiId, amount, note, idempotencyKey));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

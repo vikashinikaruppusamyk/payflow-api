@@ -8,8 +8,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Optional;
+
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
     long countByStatus(TransactionStatus status);
+
+    Optional<Transaction> findBySenderUpiIdAndIdempotencyKey(String senderUpiId, String idempotencyKey);
 
     // Both directions of a user's money movement; served by the sender and receiver indexes
     @Query("SELECT t FROM Transaction t WHERE t.senderUpiId = :upiId OR t.receiverUpiId = :upiId")
