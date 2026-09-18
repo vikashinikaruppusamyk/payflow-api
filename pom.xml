@@ -19,6 +19,8 @@
 
     <properties>
         <java.version>17</java.version>
+        <!-- Newer than the Spring Boot default so Flyway officially supports PostgreSQL 18 -->
+        <flyway.version>11.20.3</flyway.version>
     </properties>
 
     <dependencies>
