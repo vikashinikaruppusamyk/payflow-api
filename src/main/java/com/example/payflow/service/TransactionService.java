@@ -2,6 +2,7 @@ package com.example.payflow.service;
 
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.entity.Transaction;
+import com.example.payflow.entity.TransferActivity;
 import com.example.payflow.exception.IdempotencyKeyReuseException;
 import com.example.payflow.exception.InvalidTransferException;
 import com.example.payflow.exception.TransactionNotFoundException;
@@ -93,6 +94,8 @@ public class TransactionService {
         if (!sameRequest) {
             throw new IdempotencyKeyReuseException(previous.getIdempotencyKey());
         }
+        transactionRecorder.recordEvent(previous.getTransactionId(), TransferActivity.REPLAYED,
+                "Duplicate request with the same Idempotency-Key");
         return switch (previous.getStatus()) {
             case SUCCESS -> new TransferResult(previous, true);
             case FAILED -> throw TransferFailedException.replayOf(previous);
@@ -118,6 +121,8 @@ public class TransactionService {
                     throw fail(TransferFailedException.concurrentUpdate(attempt, transactionId));
                 }
                 backOff(attempt);
+                transactionRecorder.recordEvent(transactionId, TransferActivity.RETRIED,
+                        "Attempt " + (attempt + 1) + " after concurrent update");
             } catch (TransferFailedException e) {
                 throw fail(e);
             } catch (RuntimeException e) {

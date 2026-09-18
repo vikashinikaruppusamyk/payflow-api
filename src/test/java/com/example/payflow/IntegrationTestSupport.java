@@ -1,6 +1,7 @@
 package com.example.payflow;
 
 import com.example.payflow.entity.User;
+import com.example.payflow.repository.TransactionEventRepository;
 import com.example.payflow.repository.TransactionRepository;
 import com.example.payflow.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,9 +25,12 @@ public abstract class IntegrationTestSupport {
     protected UserRepository userRepository;
     @Autowired
     protected TransactionRepository transactionRepository;
+    @Autowired
+    protected TransactionEventRepository eventRepository;
 
     @BeforeEach
     void cleanDatabase() {
+        eventRepository.deleteAllInBatch();
         transactionRepository.deleteAllInBatch();
         userRepository.deleteAllInBatch();
     }

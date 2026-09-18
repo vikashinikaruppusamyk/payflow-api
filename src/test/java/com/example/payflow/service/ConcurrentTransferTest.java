@@ -3,6 +3,7 @@ package com.example.payflow.service;
 import com.example.payflow.IntegrationTestSupport;
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.entity.TransactionStatus;
+import com.example.payflow.entity.TransferActivity;
 import com.example.payflow.exception.TransferFailedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +64,9 @@ class ConcurrentTransferTest extends IntegrationTestSupport {
         assertThat(transactionRepository.countByStatus(TransactionStatus.SUCCESS)).isEqualTo(successes);
         assertThat(transactionRepository.countByStatus(TransactionStatus.FAILED)).isEqualTo(100 - successes);
         assertThat(transactionRepository.countByStatus(TransactionStatus.PENDING)).isZero();
+        // The event log agrees with the ledger: one COMPLETED event per successful transfer
+        assertThat(eventRepository.countByActivity(TransferActivity.COMPLETED)).isEqualTo(successes);
+        assertThat(eventRepository.countByActivity(TransferActivity.FAILED)).isEqualTo(100 - successes);
     }
 
     @Test

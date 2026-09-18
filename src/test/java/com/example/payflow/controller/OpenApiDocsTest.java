@@ -22,7 +22,9 @@ class OpenApiDocsTest extends IntegrationTestSupport {
                 .andExpect(jsonPath("$.paths['/users']").exists())
                 .andExpect(jsonPath("$.paths['/users/{upiId}/transactions']").exists())
                 .andExpect(jsonPath("$.paths['/transactions']").exists())
-                .andExpect(jsonPath("$.paths['/transactions/{transactionId}']").exists());
+                .andExpect(jsonPath("$.paths['/transactions/{transactionId}']").exists())
+                .andExpect(jsonPath("$.paths['/transactions/{transactionId}/events']").exists())
+                .andExpect(jsonPath("$.paths['/events/export']").exists());
     }
 
     @Test

@@ -1,7 +1,9 @@
 package com.example.payflow.controller;
 
+import com.example.payflow.dto.TransactionEventResponse;
 import com.example.payflow.dto.TransactionResponse;
 import com.example.payflow.dto.TransferRequest;
+import com.example.payflow.service.EventLogService;
 import com.example.payflow.service.TransactionService;
 import com.example.payflow.service.TransferResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -19,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @Tag(name = "Transactions", description = "Send money and look up transfers")
 @RestController
 @RequestMapping("/transactions")
@@ -27,9 +31,11 @@ public class TransactionController {
     public static final String IDEMPOTENT_REPLAY_HEADER = "Idempotent-Replayed";
 
     private final TransactionService transactionService;
+    private final EventLogService eventLogService;
 
-    public TransactionController(TransactionService transactionService) {
+    public TransactionController(TransactionService transactionService, EventLogService eventLogService) {
         this.transactionService = transactionService;
+        this.eventLogService = eventLogService;
     }
 
     /**
@@ -61,5 +67,12 @@ public class TransactionController {
     @GetMapping("/{transactionId}")
     public TransactionResponse getTransaction(@PathVariable Long transactionId) {
         return TransactionResponse.from(transactionService.getTransaction(transactionId));
+    }
+
+    @Operation(summary = "Life-cycle events of a transfer",
+            description = "Ordered steps, e.g. INITIATED, VALIDATED, DEBITED, CREDITED, COMPLETED or INITIATED, FAILED")
+    @GetMapping("/{transactionId}/events")
+    public List<TransactionEventResponse> getTransactionEvents(@PathVariable Long transactionId) {
+        return eventLogService.eventsFor(transactionId).stream().map(TransactionEventResponse::from).toList();
     }
 }

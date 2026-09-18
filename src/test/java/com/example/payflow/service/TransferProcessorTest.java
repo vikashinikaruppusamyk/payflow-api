@@ -5,6 +5,7 @@ import com.example.payflow.entity.Transaction;
 import com.example.payflow.entity.TransactionStatus;
 import com.example.payflow.entity.User;
 import com.example.payflow.exception.TransferFailedException;
+import com.example.payflow.repository.TransactionEventRepository;
 import com.example.payflow.repository.TransactionRepository;
 import com.example.payflow.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +31,8 @@ class TransferProcessorTest {
     private TransactionRepository transactionRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private TransactionEventRepository eventRepository;
     @InjectMocks
     private TransferProcessor transferProcessor;
 

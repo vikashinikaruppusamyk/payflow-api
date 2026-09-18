@@ -3,6 +3,7 @@ package com.example.payflow.service;
 import com.example.payflow.dto.TransferRequest;
 import com.example.payflow.entity.FailureReason;
 import com.example.payflow.entity.Transaction;
+import com.example.payflow.entity.TransferActivity;
 import com.example.payflow.exception.IdempotencyKeyReuseException;
 import com.example.payflow.exception.InvalidTransferException;
 import com.example.payflow.exception.TransferFailedException;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -97,6 +99,7 @@ class TransactionServiceTest {
 
         assertThat(result).isSameAs(pending);
         verify(transferProcessor, times(3)).execute(TRANSACTION_ID);
+        verify(transactionRecorder, times(2)).recordEvent(anyLong(), eq(TransferActivity.RETRIED), anyString());
         verify(transactionRecorder, never()).markFailed(anyLong(), any());
     }
 
@@ -135,6 +138,7 @@ class TransactionServiceTest {
         TransferResult result = transactionService.sendMoney(request(), "key-1");
 
         assertThat(result.replayed()).isTrue();
+        verify(transactionRecorder).recordEvent(any(), eq(TransferActivity.REPLAYED), anyString());
         assertThat(result.transaction()).isSameAs(previous);
         verify(transactionRecorder, never()).createPending(anyString(), anyString(), any(), any(), any());
         verify(transferProcessor, never()).execute(anyLong());

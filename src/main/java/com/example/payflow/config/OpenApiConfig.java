@@ -19,6 +19,7 @@ public class OpenApiConfig {
 
                         Transfers are atomic, protected against concurrent updates with optimistic locking, \
                         and idempotent when an `Idempotency-Key` header is sent. Every transfer is recorded as \
-                        PENDING and then SUCCESS or FAILED."""));
+                        PENDING and then SUCCESS or FAILED, and each step is written to an event log that can be \
+                        exported as CSV for process mining."""));
     }
 }
