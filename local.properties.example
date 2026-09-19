@@ -3,3 +3,5 @@
 DB_URL=jdbc:postgresql://localhost:5432/payflow
 DB_USERNAME=postgres
 DB_PASSWORD=
+# Secret used to sign login tokens: any random string of at least 32 characters
+JWT_SECRET=

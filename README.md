@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/vikashinikaruppusamyk/payflow-api/actions/workflows/ci.yml/badge.svg)](https://github.com/vikashinikaruppusamyk/payflow-api/actions/workflows/ci.yml)
 
-A Spring Boot REST API for a UPI-style digital wallet. Users register with a UPI ID, send money to each other and view their statements.
+A Spring Boot REST API for a UPI-style digital wallet. Users register with a UPI ID and password, log in to get a JWT, send money to each other and view their statements.
 
 The focus is on **keeping money correct**: transfers are atomic, stay correct under concurrent requests, are safe to retry, and leave an audit trail. A test suite proves each of these properties.
 
@@ -18,20 +18,26 @@ The focus is on **keeping money correct**: transfers are atomic, stay correct un
 | Floating-point rounding | Money is `BigDecimal` / `NUMERIC(19,2)` everywhere |
 | Bad input reaching the service | Bean Validation on request DTOs; JPA entities are never exposed |
 | Understanding where transfers fail | Event log per transfer (`INITIATED → … → COMPLETED/FAILED`), exportable as CSV for process mining |
+| Anyone moving money from anyone's account | **JWT authentication**; money can only leave the caller's own account, and users see only their own data |
+| Leaked passwords | Stored only as salted **BCrypt** hashes; login gives the same answer for an unknown user and a wrong password |
 
 ## Tech stack
 
-Java 17 · Spring Boot 3.5 (Web, Data JPA, Validation) · PostgreSQL · Flyway · springdoc-openapi (Swagger UI) · JUnit 5, Mockito, MockMvc · JaCoCo · GitHub Actions
+Java 17 · Spring Boot 3.5 (Web, Data JPA, Validation, Security) · JWT (jjwt) · PostgreSQL · Flyway · springdoc-openapi (Swagger UI) · JUnit 5, Mockito, MockMvc · JaCoCo · GitHub Actions
 
 ## Architecture
 
 ```
+security     JwtAuthenticationFilter – verifies the Bearer token on every request (stateless, no session)
+    │        SecurityConfig          – public vs authenticated vs admin-only routes
+    │        AccessGuard             – account ownership: users act only on their own account
+    │
 controller   REST endpoints, request validation, HTTP status codes
     │
 service      TransactionService  – orchestrates a transfer: idempotency check, retries, failure recording
     │        TransferProcessor   – one transfer attempt in one @Transactional unit
     │        TransactionRecorder – PENDING / FAILED / event writes in their own transactions (REQUIRES_NEW)
-    │        UserService, StatementService, EventLogService
+    │        UserService, AuthService, StatementService, EventLogService
     │
 repository   Spring Data JPA repositories
     │
@@ -97,6 +103,16 @@ Keys are unique per sender, enforced by a database constraint. If two identical 
 
 The schema is versioned with Flyway, and Hibernate runs with `ddl-auto=validate`.
 
+**Authentication and authorisation.** Registration (`POST /users`) and login (`POST /auth/login`) are public; everything else needs a JWT in the `Authorization: Bearer` header.
+
+- **Stateless.** The token is signed with HMAC-SHA256 and carries the user id, UPI ID and role, so the server keeps no session and needs no database lookup to authenticate a request. It expires after one hour (`payflow.jwt.expiration`).
+- **Signing key from configuration.** The key comes from `JWT_SECRET`, never from source code, and the app refuses to start if it is missing or shorter than 32 characters.
+- **Passwords.** Only a salted BCrypt hash is stored. Passwords longer than 72 bytes are rejected, because BCrypt ignores anything beyond that.
+- **Login gives nothing away.** An unknown UPI ID and a wrong password return the same `401`, and both paths do the same BCrypt work, so neither the message nor the response time reveals which UPI IDs are registered.
+- **Ownership, not just login.** The sender of a transfer must be the logged-in user (`403` otherwise), because the identity comes from the verified token and never from the request body alone. Users can read only their own profile and statement (`403` for anyone else's). A transfer is visible only to its sender, its receiver and admins; for anyone else it returns `404`, so transfer ids cannot be probed.
+- **Roles.** `USER` or `ADMIN`. Admins can view every account, list all users and export the event log. Registration always creates a `USER`.
+- **Errors.** `401` and `403` use the same JSON error shape as every other error.
+
 **Event log for process mining.** Each transfer writes one row per step: `INITIATED`, `VALIDATED`, `DEBITED`, `CREDITED`, `COMPLETED`, or `RETRIED` / `FAILED` / `REPLAYED`. This is the case-id / activity / timestamp format that process-mining tools read. `GET /events/export` downloads it as CSV, so you can analyse where transfers fail, how often they retry and how long each step takes.
 
 ## Running locally
@@ -107,13 +123,24 @@ The schema is versioned with Flyway, and Hibernate runs with `ddl-auto=validate`
    ```bash
    psql -U postgres -c "CREATE DATABASE payflow;"
    ```
-2. Configure the connection. Copy `local.properties.example` to `local.properties` (git ignores it) and set `DB_PASSWORD`. Every key can also be set as an environment variable (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`).
+2. Configure the app. Copy `local.properties.example` to `local.properties` (git ignores it) and set:
+   - `DB_PASSWORD`: your PostgreSQL password
+   - `JWT_SECRET`: any random string of at least 32 characters, used to sign login tokens
+
+   Every key can also be set as an environment variable (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`).
 3. Start the app. Flyway creates the tables on first start.
    ```bash
    ./mvnw spring-boot:run
    ```
    On Windows use `mvnw.cmd spring-boot:run`, or run `PayflowApplication` from IntelliJ.
 4. Open Swagger UI at http://localhost:8080/swagger-ui.html.
+   1. Register with **POST /users**, then log in with **POST /auth/login**.
+   2. Copy the `accessToken`, click **Authorize** and paste it.
+   3. Every other endpoint now runs as that user.
+5. Optional: to try the admin-only endpoints, promote an account in the database, then log in again, because the role is read from the token:
+   ```sql
+   UPDATE app_user SET role = 'ADMIN' WHERE upi_id = 'priya@okaxis';
+   ```
 
 ## Tests
 
@@ -121,7 +148,9 @@ The schema is versioned with Flyway, and Hibernate runs with `ddl-auto=validate`
 ./mvnw verify
 ```
 
-The suite has 62 tests: unit tests, API tests and concurrency tests. It runs against an in-memory H2 database in PostgreSQL mode, so it needs no setup. The coverage report is written to `target/site/jacoco/index.html` (about 93% line coverage, 97% in the service layer).
+The suite has 79 tests: unit tests, API tests, security tests and concurrency tests. It runs against an in-memory H2 database in PostgreSQL mode, so it needs no setup. The coverage report is written to `target/site/jacoco/index.html` (about 94% line coverage, 97% in the service layer).
+
+The security tests cover logging in, missing, tampered, expired and wrongly signed tokens, BCrypt storage, sending from another user's account, reading another user's data and admin-only endpoints.
 
 To run the same suite against a real PostgreSQL database, set:
 - `TEST_DB_URL`, e.g. `jdbc:postgresql://localhost:5432/payflow_test`
@@ -139,28 +168,35 @@ Removing `@Version` from `User` makes all three fail. In one run, an account wit
 
 ## API
 
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/users` | Register a user (`201`, `409` if the UPI ID is taken) |
-| GET | `/users?minBalance=500` | List users, optionally with balance ≥ `minBalance` |
-| GET | `/users/{userId}` | User by id |
-| GET | `/users/upi/{upiId}` | User by UPI ID (case-insensitive) |
-| GET | `/users/{upiId}/transactions?page=0&size=20&status=SUCCESS` | Paginated statement, newest first, with DEBIT/CREDIT direction |
-| POST | `/transactions` | Send money (optional `Idempotency-Key` header) |
-| GET | `/transactions/{id}` | Any transfer, including failed ones |
-| GET | `/transactions/{id}/events` | Life-cycle events of one transfer |
-| GET | `/events/export?from=&to=` | Event log as CSV |
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| POST | `/users` | Public | Register a user with a password (`201`, `409` if the UPI ID is taken) |
+| POST | `/auth/login` | Public | Log in; returns a JWT (`401` for a bad UPI ID or password) |
+| GET | `/users/me` | Logged in | Your own profile and balance |
+| GET | `/users/{userId}` | Own account or admin | User by id |
+| GET | `/users/upi/{upiId}` | Own account or admin | User by UPI ID (case-insensitive) |
+| GET | `/users/{upiId}/transactions?page=0&size=20&status=SUCCESS` | Own account or admin | Paginated statement, newest first, with DEBIT/CREDIT direction |
+| GET | `/users?minBalance=500` | Admin | List users, optionally with balance ≥ `minBalance` |
+| POST | `/transactions` | Logged in, as the sender | Send money (optional `Idempotency-Key` header) |
+| GET | `/transactions/{id}` | Sender, receiver or admin | A transfer, including failed ones |
+| GET | `/transactions/{id}/events` | Sender, receiver or admin | Life-cycle events of one transfer |
+| GET | `/events/export?from=&to=` | Admin | Event log as CSV |
 
 ### Example
 
 ```bash
 curl -X POST localhost:8080/users -H "Content-Type: application/json" \
-  -d '{"name":"Priya","upiId":"priya@okaxis","initialBalance":1000,"phoneNumber":"9876543210"}'
+  -d '{"name":"Priya","upiId":"priya@okaxis","initialBalance":1000,"phoneNumber":"9876543210","password":"priya-pass-1"}'
 
 curl -X POST localhost:8080/users -H "Content-Type: application/json" \
-  -d '{"name":"Ravi","upiId":"ravi@oksbi"}'
+  -d '{"name":"Ravi","upiId":"ravi@oksbi","password":"ravi-pass-1"}'
+
+# Log in as Priya and keep the token
+TOKEN=$(curl -s -X POST localhost:8080/auth/login -H "Content-Type: application/json" \
+  -d '{"upiId":"priya@okaxis","password":"priya-pass-1"}' | sed -E 's/.*"accessToken":"([^"]+)".*/\1/')
 
 curl -X POST localhost:8080/transactions -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Idempotency-Key: 3f6c1a52-rent-june" \
   -d '{"senderUpiId":"priya@okaxis","receiverUpiId":"ravi@oksbi","amount":250.50,"note":"rent"}'
 ```
@@ -198,7 +234,9 @@ Every error has the same shape:
 | Status | When |
 |---|---|
 | 400 | Validation errors (with `fieldErrors`), malformed JSON, self-transfer |
-| 404 | Unknown user, sender, receiver or transaction |
+| 401 | Missing, invalid or expired token; wrong UPI ID or password at login |
+| 403 | Acting on another user's account; non-admin calling an admin endpoint |
+| 404 | Unknown user, receiver or transaction (including a transaction you are not allowed to see) |
 | 409 | Duplicate UPI ID, concurrent update after retries, same Idempotency-Key still in progress |
 | 422 | Insufficient balance, Idempotency-Key reused with a different body |
 
@@ -207,12 +245,13 @@ Every error has the same shape:
 ```
 src/main/java/com/example/payflow
 ├── config        OpenAPI metadata
-├── controller    UserController, TransactionController, EventLogController
+├── controller    AuthController, UserController, TransactionController, EventLogController
 ├── dto           Request/response records, validation patterns, error and page shapes
 ├── entity        User, Transaction, TransactionEvent and their enums
 ├── exception     PayFlowException hierarchy and GlobalExceptionHandler
 ├── repository    Spring Data JPA repositories (derived queries and JPQL)
-└── service       Transfer orchestration, processing, recording, statements, event log
+├── security      JWT service and filter, security configuration, ownership checks, 401/403 handling
+└── service       Login, transfer orchestration, processing, recording, statements, event log
 src/main/resources/db/migration   Flyway SQL migrations
 ```
 
@@ -220,5 +259,6 @@ src/main/resources/db/migration   Flyway SQL migrations
 
 - **Stuck `PENDING` transfers.** If the process crashes after a transfer is recorded as `PENDING` but before it finishes, the row stays `PENDING`. A scheduled reconciliation job would resolve these.
 - **Balances are updated in place.** A double-entry ledger (immutable debit/credit entries, with balance derived from them) is the usual next step for auditability.
-- **No authentication yet.** Any caller can move money from any account. Spring Security with per-user authorisation would come next.
+- **Tokens cannot be revoked early.** A stolen token stays valid until it expires (one hour), and a role change takes effect only after the next login. Short-lived access tokens plus refresh tokens, or a token deny-list, would address this.
+- **No rate limiting on login.** Repeated password guesses are slowed only by BCrypt. Per-account and per-IP limits or lockouts would come next.
 - **Single database.** Scaling out would mean sharding accounts. A transfer between accounts on different shards, or in different services, would need a saga or the outbox pattern instead of one local transaction.

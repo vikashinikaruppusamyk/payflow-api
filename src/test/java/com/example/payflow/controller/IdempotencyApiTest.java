@@ -43,6 +43,7 @@ class IdempotencyApiTest extends IntegrationTestSupport {
 
     private ResultActions transfer(String key, String json) throws Exception {
         return mockMvc.perform(post("/transactions")
+                .header("Authorization", bearerForSender(json, "priya@okaxis"))
                 .header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json));

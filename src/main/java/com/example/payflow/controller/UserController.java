@@ -7,6 +7,7 @@ import com.example.payflow.dto.StatementEntryResponse;
 import com.example.payflow.dto.UserResponse;
 import com.example.payflow.entity.TransactionStatus;
 import com.example.payflow.entity.User;
+import com.example.payflow.security.AccessGuard;
 import com.example.payflow.service.StatementService;
 import com.example.payflow.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -36,13 +38,18 @@ import java.util.List;
 public class UserController {
     private final UserService userService;
     private final StatementService statementService;
+    private final AccessGuard accessGuard;
 
-    public UserController(UserService userService, StatementService statementService) {
+    public UserController(UserService userService, StatementService statementService, AccessGuard accessGuard) {
         this.userService = userService;
         this.statementService = statementService;
+        this.accessGuard = accessGuard;
     }
 
-    @Operation(summary = "Register a user", description = "UPI IDs are unique and case-insensitive (stored in lower case).")
+    @Operation(summary = "Register a user", description = """
+            Public. UPI IDs are unique and case-insensitive (stored in lower case). The password is stored only as \
+            a BCrypt hash; log in with POST /auth/login to get a token.""")
+    @SecurityRequirements // public endpoint: no token needed
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "User registered",
                     headers = @Header(name = "Location", description = "URL of the new user",
@@ -70,10 +77,12 @@ public class UserController {
     }
 
     // GET /users lists everyone; GET /users?minBalance=500 filters by balance
-    @Operation(summary = "List users", description = "Optionally only users whose balance is at least minBalance")
+    @Operation(summary = "List users (admin only)", description = "Optionally only users whose balance is at least minBalance")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Matching users",
                     content = @Content(array = @ArraySchema(schema = @Schema(implementation = UserResponse.class)))),
+            @ApiResponse(responseCode = "403", description = "Caller is not an admin",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "400", description = "minBalance is negative or not a number",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
@@ -85,37 +94,54 @@ public class UserController {
         return users.stream().map(UserResponse::from).toList();
     }
 
-    @Operation(summary = "Get a user by id")
+    @Operation(summary = "Get the logged-in user")
+    @ApiResponses(@ApiResponse(responseCode = "200", description = "Your profile and balance",
+            content = @Content(schema = @Schema(implementation = UserResponse.class))))
+    @GetMapping("/me")
+    public UserResponse getCurrentUser() {
+        return UserResponse.from(userService.getUserById(accessGuard.currentUser().userId()));
+    }
+
+    @Operation(summary = "Get a user by id", description = "Your own account, or any account for an admin")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "User found",
                     content = @Content(schema = @Schema(implementation = UserResponse.class))),
             @ApiResponse(responseCode = "400", description = "User id is not a number",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
-            @ApiResponse(responseCode = "404", description = "No user with this id",
+            @ApiResponse(responseCode = "403", description = "Not your account",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "No user with this id (admins only; other callers get 403 first)",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @GetMapping("/{userId}")
     public UserResponse getUserById(@PathVariable Long userId) {
+        accessGuard.requireSelfOrAdmin(userId);
         return UserResponse.from(userService.getUserById(userId));
     }
 
-    @Operation(summary = "Get a user by UPI ID")
+    @Operation(summary = "Get a user by UPI ID", description = "Your own account, or any account for an admin")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "User found",
                     content = @Content(schema = @Schema(implementation = UserResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Not your account",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "No user with this UPI ID",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
     @GetMapping("/upi/{upiId}")
     public UserResponse getUserByUpiId(@PathVariable String upiId) {
+        accessGuard.requireSelfOrAdmin(upiId);
         return UserResponse.from(userService.findByUpiId(upiId));
     }
 
     // Statement: money sent and received by this UPI ID, newest first, optionally filtered by status
     @Operation(summary = "Transaction history (statement)",
-            description = "Money sent (DEBIT) and received (CREDIT), newest first, paginated, optionally filtered by status")
+            description = "Money sent (DEBIT) and received (CREDIT), newest first, paginated, optionally filtered by status. "
+                    + "Your own account, or any account for an admin.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "One page of the statement"),
+            @ApiResponse(responseCode = "403", description = "Not your account",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "400", description = "Invalid page, size (max 100) or status value",
                     content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "404", description = "No user with this UPI ID",
@@ -128,6 +154,7 @@ public class UserController {
             @RequestParam(defaultValue = "0") @Min(value = 0, message = "page cannot be negative") int page,
             @RequestParam(defaultValue = "20") @Min(value = 1, message = "size must be at least 1")
             @Max(value = 100, message = "size cannot exceed 100") int size) {
+        accessGuard.requireSelfOrAdmin(upiId);
         String normalizedUpiId = UserService.normalizeUpiId(upiId);
         return PageResponse.from(statementService.getStatement(upiId, status, page, size),
                 transaction -> StatementEntryResponse.from(transaction, normalizedUpiId));

@@ -28,7 +28,9 @@ class TransactionApiTest extends IntegrationTestSupport {
     }
 
     private ResultActions transfer(String json) throws Exception {
-        return mockMvc.perform(post("/transactions").contentType(MediaType.APPLICATION_JSON).content(json));
+        return mockMvc.perform(post("/transactions")
+                .header("Authorization", bearerForSender(json, "priya@okaxis"))
+                .contentType(MediaType.APPLICATION_JSON).content(json));
     }
 
     @Test
@@ -75,7 +77,7 @@ class TransactionApiTest extends IntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
         long transactionId = ((Number) JsonPath.read(body, "$.transactionId")).longValue();
 
-        mockMvc.perform(get("/transactions/{id}", transactionId))
+        mockMvc.perform(get("/transactions/{id}", transactionId).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("FAILED"))
                 .andExpect(jsonPath("$.failureReason").value("INSUFFICIENT_BALANCE"))
@@ -84,7 +86,7 @@ class TransactionApiTest extends IntegrationTestSupport {
 
     @Test
     void unknownTransactionIdReturns404() throws Exception {
-        mockMvc.perform(get("/transactions/{id}", 987654))
+        mockMvc.perform(get("/transactions/{id}", 987654).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isNotFound());
     }
 

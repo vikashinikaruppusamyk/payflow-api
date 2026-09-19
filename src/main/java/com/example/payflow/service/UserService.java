@@ -5,7 +5,7 @@ import com.example.payflow.entity.User;
 import com.example.payflow.exception.DuplicateUpiIdException;
 import com.example.payflow.exception.UserNotFoundException;
 import com.example.payflow.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,10 +17,11 @@ import java.util.Locale;
 @Service
 public class UserService {
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    @Autowired
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional
@@ -32,7 +33,9 @@ public class UserService {
         }
         BigDecimal initialBalance = request.initialBalance() == null ? BigDecimal.ZERO : request.initialBalance();
         initialBalance = initialBalance.setScale(2, RoundingMode.UNNECESSARY);
-        User user = new User(request.name().trim(), upiId, initialBalance, request.phoneNumber());
+        // Only the salted BCrypt hash is stored; every new account starts with the USER role
+        User user = new User(request.name().trim(), upiId, initialBalance, request.phoneNumber(),
+                passwordEncoder.encode(request.password()));
         return userRepository.save(user);
     }
 

@@ -22,6 +22,11 @@ public record CreateUserRequest(
         BigDecimal initialBalance,
 
         @Pattern(regexp = ValidationPatterns.PHONE_NUMBER, message = "Phone number must be a valid 10-digit mobile number")
-        String phoneNumber
+        String phoneNumber,
+
+        // BCrypt only uses the first 72 bytes of a password, so longer ones are rejected rather than silently truncated
+        @NotBlank(message = "Password is required")
+        @Size(min = 8, max = 72, message = "Password must be 8 to 72 characters")
+        String password
 ) {
 }

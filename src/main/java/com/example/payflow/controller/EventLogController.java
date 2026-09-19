@@ -31,7 +31,7 @@ public class EventLogController {
         this.eventLogService = eventLogService;
     }
 
-    @Operation(summary = "Export the event log as CSV",
+    @Operation(summary = "Export the event log as CSV (admin only)",
             description = "One row per event (case_id = transaction id, activity, timestamp, details), "
                     + "optionally limited to a time window. Suitable for loading into a process-mining tool.")
     @ApiResponses({
@@ -48,6 +48,8 @@ public class EventLogController {
                                     2,FAILED,2026-09-18T13:05:08.137652,INSUFFICIENT_BALANCE
                                     """))),
             @ApiResponse(responseCode = "400", description = "from/to is not an ISO date-time, or from is after to",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Caller is not an admin",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = ErrorResponse.class)))
     })
     @GetMapping("/export")

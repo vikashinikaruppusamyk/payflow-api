@@ -28,11 +28,13 @@ class EventLogApiTest extends IntegrationTestSupport {
     @BeforeEach
     void createUsers() {
         createUser("priya@okaxis", "1000.00");
+        createAdmin("admin@payflow");
         createUser("ravi@oksbi", "50.00");
     }
 
     private ResultActions transfer(String key, String json) throws Exception {
-        var request = post("/transactions").contentType(MediaType.APPLICATION_JSON).content(json);
+        var request = post("/transactions").contentType(MediaType.APPLICATION_JSON).content(json)
+                .header("Authorization", bearerForSender(json, "priya@okaxis"));
         return mockMvc.perform(key == null ? request : request.header("Idempotency-Key", key));
     }
 
@@ -46,7 +48,7 @@ class EventLogApiTest extends IntegrationTestSupport {
                 {"senderUpiId": "priya@okaxis", "receiverUpiId": "ravi@oksbi", "amount": 100}
                 """).andExpect(status().isCreated()));
 
-        mockMvc.perform(get("/transactions/{id}/events", id))
+        mockMvc.perform(get("/transactions/{id}/events", id).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].activity", contains("INITIATED", "VALIDATED", "DEBITED", "CREDITED", "COMPLETED")));
     }
@@ -58,7 +60,7 @@ class EventLogApiTest extends IntegrationTestSupport {
                 """).andExpect(status().isUnprocessableEntity()));
 
         // No VALIDATED/DEBITED: those steps were rolled back with the failed attempt
-        mockMvc.perform(get("/transactions/{id}/events", id))
+        mockMvc.perform(get("/transactions/{id}/events", id).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].activity", contains("INITIATED", "FAILED")))
                 .andExpect(jsonPath("$[1].details").value("INSUFFICIENT_BALANCE"));
@@ -72,14 +74,14 @@ class EventLogApiTest extends IntegrationTestSupport {
         long id = transactionIdOf(transfer("k-1", body).andExpect(status().isCreated()));
         transfer("k-1", body).andExpect(status().isOk());
 
-        mockMvc.perform(get("/transactions/{id}/events", id))
+        mockMvc.perform(get("/transactions/{id}/events", id).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(jsonPath("$[*].activity",
                         contains("INITIATED", "VALIDATED", "DEBITED", "CREDITED", "COMPLETED", "REPLAYED")));
     }
 
     @Test
     void eventsOfUnknownTransactionReturn404() throws Exception {
-        mockMvc.perform(get("/transactions/{id}/events", 99999))
+        mockMvc.perform(get("/transactions/{id}/events", 99999).header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isNotFound());
     }
 
@@ -92,7 +94,7 @@ class EventLogApiTest extends IntegrationTestSupport {
                 {"senderUpiId": "ravi@oksbi", "receiverUpiId": "priya@okaxis", "amount": 5000}
                 """));
 
-        String csv = mockMvc.perform(get("/events/export"))
+        String csv = mockMvc.perform(get("/events/export").header("Authorization", bearer("admin@payflow")))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith("text/csv"))
                 .andExpect(header().string("Content-Disposition", containsString("payflow-event-log.csv")))
@@ -112,12 +114,12 @@ class EventLogApiTest extends IntegrationTestSupport {
                 {"senderUpiId": "priya@okaxis", "receiverUpiId": "ravi@oksbi", "amount": 100}
                 """);
 
-        mockMvc.perform(get("/events/export").param("from", "2000-01-01T00:00:00").param("to", "2000-12-31T00:00:00"))
+        mockMvc.perform(get("/events/export").header("Authorization", bearer("admin@payflow")).param("from", "2000-01-01T00:00:00").param("to", "2000-12-31T00:00:00"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("case_id,activity,timestamp,details\n"));
-        mockMvc.perform(get("/events/export").param("from", "2030-01-01T00:00:00").param("to", "2020-01-01T00:00:00"))
+        mockMvc.perform(get("/events/export").header("Authorization", bearer("admin@payflow")).param("from", "2030-01-01T00:00:00").param("to", "2020-01-01T00:00:00"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/events/export").param("from", "yesterday"))
+        mockMvc.perform(get("/events/export").header("Authorization", bearer("admin@payflow")).param("from", "yesterday"))
                 .andExpect(status().isBadRequest());
     }
 }

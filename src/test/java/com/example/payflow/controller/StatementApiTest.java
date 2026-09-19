@@ -44,7 +44,7 @@ class StatementApiTest extends IntegrationTestSupport {
 
     @Test
     void returnsBothDirectionsNewestFirst() throws Exception {
-        mockMvc.perform(get("/users/{upiId}/transactions", "Priya@OkAxis"))
+        mockMvc.perform(get("/users/{upiId}/transactions", "Priya@OkAxis").header("Authorization", bearer("priya@okaxis")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(4))
                 .andExpect(jsonPath("$.content", hasSize(4)))
@@ -60,14 +60,14 @@ class StatementApiTest extends IntegrationTestSupport {
 
     @Test
     void filtersByStatus() throws Exception {
-        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").param("status", "SUCCESS"))
+        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").header("Authorization", bearer("priya@okaxis")).param("status", "SUCCESS"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(3));
     }
 
     @Test
     void paginates() throws Exception {
-        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").param("page", "1").param("size", "3"))
+        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").header("Authorization", bearer("priya@okaxis")).param("page", "1").param("size", "3"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(1))
                 .andExpect(jsonPath("$.size").value(3))
@@ -79,16 +79,29 @@ class StatementApiTest extends IntegrationTestSupport {
 
     @Test
     void rejectsInvalidPagingAndUnknownStatus() throws Exception {
-        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").param("size", "500"))
+        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").header("Authorization", bearer("priya@okaxis")).param("size", "500"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.size").value("size cannot exceed 100"));
-        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").param("status", "DONE"))
+        mockMvc.perform(get("/users/{upiId}/transactions", "priya@okaxis").header("Authorization", bearer("priya@okaxis")).param("status", "DONE"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void unknownUserReturns404() throws Exception {
-        mockMvc.perform(get("/users/{upiId}/transactions", "ghost@okaxis"))
+    void usersCannotReadSomeoneElsesStatementButAdminsCan() throws Exception {
+        createAdmin("admin@payflow");
+
+        mockMvc.perform(get("/users/{upiId}/transactions", "ravi@oksbi").header("Authorization", bearer("priya@okaxis")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/users/{upiId}/transactions", "ravi@oksbi").header("Authorization", bearer("admin@payflow")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(4));
+    }
+
+    @Test
+    void unknownUserReturns404ForAdmins() throws Exception {
+        createAdmin("admin@payflow");
+
+        mockMvc.perform(get("/users/{upiId}/transactions", "ghost@okaxis").header("Authorization", bearer("admin@payflow")))
                 .andExpect(status().isNotFound());
     }
 }

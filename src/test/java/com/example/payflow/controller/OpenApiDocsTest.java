@@ -48,6 +48,25 @@ class OpenApiDocsTest extends IntegrationTestSupport {
     }
 
     @Test
+    void documentsBearerAuthenticationAndWhichEndpointsArePublic() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
+                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.bearerFormat").value("JWT"))
+                .andExpect(jsonPath("$.paths['/auth/login'].post").exists())
+                // Registration and login are public: no token requirement and no 401
+                .andExpect(jsonPath("$.paths['/users'].post.security").isEmpty())
+                .andExpect(jsonPath("$.paths['/users'].post.responses['401']").doesNotExist())
+                .andExpect(jsonPath("$.paths['/auth/login'].post.security").isEmpty())
+                // Protected endpoints document 401, and 403 where ownership or role rules apply
+                .andExpect(jsonPath("$.paths['/transactions'].post.responses['401']").exists())
+                .andExpect(jsonPath("$.paths['/transactions'].post.responses['403']").exists())
+                .andExpect(jsonPath("$.paths['/users'].get.responses['403']").exists())
+                .andExpect(jsonPath("$.paths['/events/export'].get.responses['403']").exists())
+                .andExpect(jsonPath("$.paths['/users/me'].get.responses['401']").exists());
+    }
+
+    @Test
     void servesSwaggerUi() throws Exception {
         mockMvc.perform(get("/swagger-ui/index.html"))
                 .andExpect(status().isOk());
